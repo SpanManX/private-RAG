@@ -1,5 +1,7 @@
 node_modules
 dist
 out
+.idea
+.*
 .DS_Store
 *.log*
