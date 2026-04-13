@@ -6,7 +6,7 @@
   "author": "",
   "license": "MIT",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "chcp 65001 && electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "postinstall": "electron-builder install-app-deps",
@@ -19,7 +19,11 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^4.0.0",
+    "@huggingface/hub": "^2.11.0",
     "@lancedb/lancedb": "^0.27.2",
+    "@langchain/core": "^1.1.39",
+    "@langchain/openai": "^1.4.4",
+    "adm-zip": "^0.5.17",
     "mammoth": "^1.8.0",
     "marked": "^15.0.0",
     "pdf-parse": "^1.1.1",
@@ -30,6 +34,7 @@
   "devDependencies": {
     "@electron-toolkit/tsconfig": "^1.0.1",
     "@rushstack/eslint-patch": "^1.10.5",
+    "@types/adm-zip": "^0.5.8",
     "@types/node": "^22.10.5",
     "@vitejs/plugin-vue": "^5.2.1",
     "@vue/eslint-config-prettier": "^10.1.0",

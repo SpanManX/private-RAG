@@ -12,9 +12,11 @@ const downloadProgress = ref({ percent: 0, speed: '', phase: '', fileName: '', c
 const isDownloading = ref(false)
 const errorMessage = ref('')
 const showError = ref(false)
+const modelsDir = ref('')
 let statusPollInterval: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
+  await loadModelsDir()
   await checkServerStatus()
   startStatusPoll()
 })
@@ -94,6 +96,22 @@ async function cancelDownload() {
   statusMessage.value = '下载已取消'
 }
 
+async function loadModelsDir() {
+  modelsDir.value = await window.api.config.getModelsDir()
+}
+
+async function selectModelsDir() {
+  const dir = await window.api.dialog.selectDirectory()
+  if (dir) {
+    try {
+      await window.api.config.setModelsDir(dir)
+      modelsDir.value = dir
+    } catch (e) {
+      showErrorMsg(String(e))
+    }
+  }
+}
+
 function showErrorMsg(msg: string) {
   errorMessage.value = msg
   showError.value = true
@@ -170,6 +188,17 @@ function getStatusLabel(): string {
     <section class="settings-section">
       <h2>模型下载</h2>
       <div class="status-card">
+        <div class="status-row">
+          <span class="label">下载目录:</span>
+          <span class="value models-dir-path">{{ modelsDir }}</span>
+          <button
+            class="btn btn-small"
+            :disabled="isDownloading"
+            @click="selectModelsDir"
+          >
+            更改
+          </button>
+        </div>
         <div v-if="isDownloading" class="download-active">
           <div class="download-file">
             正在下载: <strong>{{ downloadProgress.fileName }}</strong>
@@ -419,5 +448,24 @@ function getStatusLabel(): string {
 }
 .btn-warning:hover:not(:disabled) {
   background: #d97706;
+}
+
+/* 小按钮 */
+.btn-small {
+  padding: 4px 12px;
+  font-size: 12px;
+  background: #e5e7eb;
+  color: #374151;
+}
+.btn-small:hover:not(:disabled) {
+  background: #d1d5db;
+}
+
+/* 目录路径 */
+.models-dir-path {
+  flex: 1;
+  word-break: break-all;
+  font-size: 13px;
+  color: #6b7280;
 }
 </style>

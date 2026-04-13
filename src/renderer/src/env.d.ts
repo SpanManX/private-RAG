@@ -11,16 +11,24 @@ interface Window {
   electron: typeof import('@electron-toolkit/preload').electronAPI
   api: {
     server: {
-      status: () => Promise<{ state: string; message: string }>
+      status: () => Promise<{ state: 'idle' | 'starting' | 'running' | 'error'; message: string; gpuAvailable?: boolean }>
       start: () => Promise<void>
       stop: () => Promise<void>
       downloadModel: () => Promise<void>
-      onDownloadProgress: (callback: (progress: { percent: number; speed: string }) => void) => void
+      cancelDownload: () => Promise<void>
+      onDownloadProgress: (callback: (progress: {
+        percent: number
+        speed: string
+        phase: 'llama-server' | 'model' | 'embedding' | 'done'
+        fileName: string
+        current: number
+        total: number
+      }) => void) => void
     }
     document: {
-      import: (filePath: string) => Promise<{ success: boolean; docId?: string; error?: string }>
+      import: (filePath: string) => Promise<{ success: boolean; docId?: string; textLength?: number; error?: string }>
       importBatch: (filePaths: string[]) => Promise<{ filePath: string; success: boolean; docId?: string; error?: string }[]>
-      list: () => Promise<Array<{ id: string; fileName: string; createdAt: number }>>
+      list: () => Promise<Array<{ id: string; fileName: string; createdAt: number; textLength?: number }>>
       delete: (docId: string) => Promise<void>
     }
     rag: {
@@ -37,6 +45,11 @@ interface Window {
     }
     dialog: {
       openFile: () => Promise<string[]>
+      selectDirectory: () => Promise<string | null>
+    }
+    config: {
+      getModelsDir: () => Promise<string>
+      setModelsDir: (dir: string) => Promise<{ success: boolean }>
     }
   }
 }

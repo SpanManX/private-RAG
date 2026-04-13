@@ -4,16 +4,16 @@
 
 ## 技术栈
 
-| 模块 | 选型 | 说明 |
-|------|------|------|
-| 桌面框架 | Electron 33 | Node.js 主进程 + WebView2 渲染 |
-| 前端框架 | Vue 3 + TypeScript | 组合式 API |
-| 构建工具 | electron-vite | 更快的前端开发体验 |
-| 状态管理 | Pinia | 轻量响应式状态管理 |
-| 推理引擎 | llama.cpp | 通过 llama-server 调用 Qwen3 模型 |
-| 对话模型 | Qwen3-1.5B-GGUF | Q4 量化，约 1.5GB |
-| Embedding | bge-small-zh-v1.5 | 集成在 llama-server 中 |
-| 向量数据库 | LanceDB | 单文件数据库，无需安装 |
+| 模块 | 选型                        | 说明 |
+|------|---------------------------|------|
+| 桌面框架 | Electron 33               | Node.js 主进程 + WebView2 渲染 |
+| 前端框架 | Vue 3 + TypeScript        | 组合式 API |
+| 构建工具 | electron-vite             | 更快的前端开发体验 |
+| 状态管理 | Pinia                     | 轻量响应式状态管理 |
+| 推理引擎 | llama.cpp                 | 通过 llama-server 调用 Qwen3 模型 |
+| 对话模型 | Qwen3-1.7B-GGUF           | Q4 量化，约 1.5GB |
+| Embedding | bge-small-zh-v1.5         | 集成在 llama-server 中 |
+| 向量数据库 | LanceDB                   | 单文件数据库，无需安装 |
 | 文档解析 | pdf.js / mammoth / marked | PDF/Word/Markdown/TXT 支持 |
 
 ## 项目结构
