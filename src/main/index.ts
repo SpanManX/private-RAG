@@ -62,6 +62,7 @@ function registerIpcHandlers(): void {
     ipcMain.handle('server:start', () => serverManager.start())
     ipcMain.handle('server:stop', () => serverManager.stop())
     ipcMain.handle('server:download-model', () => serverManager.downloadModel())
+    ipcMain.handle('server:cancel-download', () => serverManager.cancelDownload())
 
     ipcMain.handle('document:import', async (_event, filePath: string) => {
         try {
