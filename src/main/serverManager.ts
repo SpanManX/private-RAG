@@ -63,8 +63,7 @@ export class ServerManager {
 
   private fileExists(path: string, minSize: number = 1024): boolean {
     try {
-      const fs = require('fs')
-      const stats = fs.statSync(path)
+      const stats = { size: require('fs').statSync(path).size }
       return stats.size >= minSize
     } catch {
       return false
@@ -84,8 +83,7 @@ export class ServerManager {
       return
     }
 
-    const gpuAvailable = this.detectGpu()
-    log(`GPU available: ${gpuAvailable}`)
+    log(`GPU available: ${this.gpuAvailable}`)
 
     if (!existsSync(this.llamaServerPath)) {
       throw new Error(`llama-server.exe not found. Please download it from Settings page first.`)
@@ -99,7 +97,7 @@ export class ServerManager {
       '-m', this.modelPath,
       '-c', '4096',
       '--port', String(this.port),
-      '-ngl', gpuAvailable ? '99' : '0',
+      '-ngl', this.gpuAvailable ? '99' : '0',
       '--embedding', this.embeddingPath,
       '--host', '127.0.0.1'
     ]
