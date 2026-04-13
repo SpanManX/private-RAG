@@ -15,6 +15,10 @@ export interface ServerStatus {
 export interface DownloadProgress {
   percent: number
   speed: string
+  phase: 'llama-server' | 'model' | 'embedding' | 'done'
+  fileName: string
+  current: number   // 当前阶段 1-3
+  total: number      // 总阶段数
 }
 
 export class ServerManager {
@@ -24,6 +28,9 @@ export class ServerManager {
   private embeddingPath: string
   private llamaServerPath: string
   private modelsDir: string
+  private cancellationToken: { cancelled: boolean } = { cancelled: false }
+  private isDownloading = false
+  private gpuAvailable: boolean   // 缓存 GPU 检测结果，避免每 3 秒轮询时重复文件系统检查
 
   // ModelScope 国内镜像
   private readonly LLAMA_SERVER_URL = 'https://github.com/ggerganov/llama.cpp/releases/download/b4706/llama-server-windows-x64.exe'
@@ -35,13 +42,15 @@ export class ServerManager {
     this.llamaServerPath = join(this.modelsDir, 'llama-server.exe')
     this.modelPath = join(this.modelsDir, 'qwen3-1.5b-q4_k_m.gguf')
     this.embeddingPath = join(this.modelsDir, 'bge-small-zh-v1.5-f16.gguf')
+    this.gpuAvailable = this.detectGpu()
+    log(`GPU available (cached): ${this.gpuAvailable}`)
   }
 
   getStatus(): ServerStatus {
     if (!this.process) {
-      return { state: 'idle', message: 'Server not running' }
+      return { state: 'idle', message: 'Server not running', gpuAvailable: this.gpuAvailable }
     }
-    return { state: 'running', message: `llama-server running on port ${this.port}` }
+    return { state: 'running', message: `llama-server running on port ${this.port}`, gpuAvailable: this.gpuAvailable }
   }
 
   private detectGpu(): boolean {
@@ -50,6 +59,23 @@ export class ServerManager {
       'C:\\Windows\\System32\\nvcuda.dll'
     ]
     return cudaPaths.some((p) => existsSync(p))
+  }
+
+  private fileExists(path: string, minSize: number = 1024): boolean {
+    try {
+      const fs = require('fs')
+      const stats = fs.statSync(path)
+      return stats.size >= minSize
+    } catch {
+      return false
+    }
+  }
+
+  cancelDownload(): void {
+    if (this.isDownloading) {
+      this.cancellationToken.cancelled = true
+      log('Download cancelled by user')
+    }
   }
 
   async start(): Promise<void> {
@@ -111,46 +137,80 @@ export class ServerManager {
     const win = BrowserWindow.getAllWindows()[0]
     if (!win) return
 
-    if (!existsSync(this.modelsDir)) {
-      mkdirSync(this.modelsDir, { recursive: true })
+    this.cancellationToken = { cancelled: false }
+    this.isDownloading = true
+
+    try {
+      if (!existsSync(this.modelsDir)) {
+        mkdirSync(this.modelsDir, { recursive: true })
+      }
+
+      // 1. 下载 llama-server.exe
+      if (this.fileExists(this.llamaServerPath, 1024)) {
+        win.webContents.send('server:download-progress', {
+          percent: 100, speed: '已存在', phase: 'llama-server',
+          fileName: 'llama-server.exe', current: 1, total: 3
+        })
+      } else {
+        await this.downloadFile(this.LLAMA_SERVER_URL, this.llamaServerPath, win, 'llama-server', 1)
+      }
+
+      // 2. 下载 Qwen3 模型
+      if (this.fileExists(this.modelPath, 100_000_000)) {
+        win.webContents.send('server:download-progress', {
+          percent: 100, speed: '已存在', phase: 'model',
+          fileName: 'qwen3-1.5b-q4_k_m.gguf', current: 2, total: 3
+        })
+      } else {
+        await this.downloadFile(this.MODEL_URL, this.modelPath, win, 'model', 2)
+      }
+
+      // 3. 下载 embedding 模型
+      const embeddingFileName = 'bge-small-zh-v1.5-f16.gguf'
+      if (this.fileExists(this.embeddingPath, 10_000_000)) {
+        win.webContents.send('server:download-progress', {
+          percent: 100, speed: '已存在', phase: 'embedding',
+          fileName: embeddingFileName, current: 3, total: 3
+        })
+      } else {
+        await this.downloadFile(this.EMBEDDING_URL + embeddingFileName, this.embeddingPath, win, 'embedding', 3)
+      }
+
+      win.webContents.send('server:download-progress', {
+        percent: 100, speed: 'All files ready', phase: 'done',
+        fileName: '', current: 3, total: 3
+      })
+    } finally {
+      this.isDownloading = false
     }
-
-    // 1. 下载 llama-server.exe
-    log('Downloading llama-server.exe...')
-    await this.downloadFile(this.LLAMA_SERVER_URL, this.llamaServerPath, win, 'llama-server')
-    log('llama-server.exe downloaded')
-
-    // 2. 下载 Qwen3 模型
-    log('Downloading Qwen3-1.5B model...')
-    await this.downloadFile(this.MODEL_URL, this.modelPath, win, 'model')
-    log('Qwen3 model downloaded')
-
-    win.webContents.send('server:download-progress', {
-      percent: 100,
-      speed: 'All files ready'
-    })
   }
 
   private async downloadFile(
     url: string,
     destPath: string,
     win: BrowserWindow,
-    label: string
+    label: string,
+    phase: 1 | 2 | 3
   ): Promise<void> {
+    const fileName = destPath.split(/[/\\]/).pop() || ''
+
     return new Promise((resolve, reject) => {
+      if (this.cancellationToken.cancelled) {
+        reject(new Error('Download cancelled'))
+        return
+      }
+
       const mod = url.startsWith('https') ? https : http
       const file = createWriteStream(destPath)
 
       mod.get(url, (res) => {
-        // follow redirects
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           mod.get(res.headers.location, (res2) => {
-            this.doDownload(res2, file, win, label).then(resolve).catch(reject)
+            this.doDownload(res2, file, win, label, phase, fileName).then(resolve).catch(reject)
           }).on('error', reject)
           return
         }
-
-        this.doDownload(res, file, win, label).then(resolve).catch(reject)
+        this.doDownload(res, file, win, label, phase, fileName).then(resolve).catch(reject)
       }).on('error', reject)
     })
   }
@@ -159,19 +219,27 @@ export class ServerManager {
     res: http.IncomingMessage,
     file: ReturnType<typeof createWriteStream>,
     win: BrowserWindow,
-    label: string
+    label: string,
+    phase: 1 | 2 | 3,
+    fileName: string
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       let downloadedBytes = 0
       const totalBytes = parseInt(res.headers['content-length'] ?? '0', 10) || 100_000_000
+      const phaseNames = { 1: 'llama-server', 2: 'model', 3: 'embedding' } as const
 
       res.on('data', (chunk: Buffer) => {
+        if (this.cancellationToken.cancelled) {
+          file.destroy()
+          reject(new Error('Download cancelled'))
+          return
+        }
         downloadedBytes += chunk.length
         file.write(chunk)
         const percent = Math.round((downloadedBytes / totalBytes) * 100)
         win.webContents.send('server:download-progress', {
-          percent,
-          speed: this.formatSpeed(downloadedBytes, Date.now())
+          percent, speed: this.formatSpeed(downloadedBytes, Date.now()),
+          phase: phaseNames[phase], fileName, current: phase, total: 3
         })
       })
 
