@@ -1,42 +1,111 @@
 <script setup lang="ts">
-import { onMounted, ref, onUnmounted } from 'vue'
+import { onMounted, ref, onUnmounted, computed } from 'vue'
 import { useDocumentStore } from '@/stores/documentStore'
 
 const documentStore = useDocumentStore()
 documentStore.refreshDocuments()
+
 const serverStatus = ref<'idle' | 'starting' | 'running' | 'error'>('idle')
-const downloadProgress = ref(0)
 const statusMessage = ref('')
+const gpuAvailable = ref(false)
+const downloadProgress = ref({ percent: 0, speed: '', phase: '', fileName: '', current: 0, total: 3 })
+const isDownloading = ref(false)
+const errorMessage = ref('')
+const showError = ref(false)
+let statusPollInterval: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
   await checkServerStatus()
+  startStatusPoll()
 })
 
-async function checkServerStatus(): Promise<void> {
-  const status = await window.api.server.status()
-  serverStatus.value = status.state === 'running' ? 'running' : 'idle'
-  statusMessage.value = status.message
+onUnmounted(() => {
+  stopStatusPoll()
+})
+
+function startStatusPoll() {
+  statusPollInterval = setInterval(checkServerStatus, 3000)
 }
 
-async function startServer(): Promise<void> {
+function stopStatusPoll() {
+  if (statusPollInterval) {
+    clearInterval(statusPollInterval)
+    statusPollInterval = null
+  }
+}
+
+async function checkServerStatus() {
+  const status = await window.api.server.status()
+  serverStatus.value = status.state === 'running' ? 'running' : (status.state === 'error' ? 'error' : 'idle')
+  statusMessage.value = status.message
+  gpuAvailable.value = status.gpuAvailable ?? false
+}
+
+async function startServer() {
+  clearError()
   serverStatus.value = 'starting'
   statusMessage.value = '正在启动模型服务...'
-  await window.api.server.start()
+  try {
+    await window.api.server.start()
+    await checkServerStatus()
+  } catch (e) {
+    showErrorMsg(String(e))
+    serverStatus.value = 'error'
+  }
+}
+
+async function stopServer() {
+  clearError()
+  await window.api.server.stop()
   await checkServerStatus()
 }
 
-async function downloadModel(): Promise<void> {
-  serverStatus.value = 'starting'
-  statusMessage.value = '正在下载模型（约 1.5GB）...'
+async function downloadModel() {
+  clearError()
+  isDownloading.value = true
+  downloadProgress.value = { percent: 0, speed: '', phase: 'llama-server', fileName: 'llama-server.exe', current: 1, total: 3 }
+  statusMessage.value = '正在下载模型...'
 
   window.api.server.onDownloadProgress((progress) => {
-    downloadProgress.value = progress.percent
-    statusMessage.value = `下载中: ${Math.round(progress.percent)}% - ${progress.speed}`
+    downloadProgress.value = progress
+    if (progress.phase === 'done') {
+      statusMessage.value = '所有文件已就绪'
+      isDownloading.value = false
+    } else {
+      statusMessage.value = `下载中: ${progress.fileName} - ${progress.percent}%`
+    }
   })
 
-  await window.api.server.downloadModel()
-  await checkServerStatus()
+  try {
+    await window.api.server.downloadModel()
+  } catch (e) {
+    if (String(e).includes('cancelled')) {
+      statusMessage.value = '下载已取消'
+    } else {
+      showErrorMsg(String(e))
+    }
+    isDownloading.value = false
+  }
 }
+
+async function cancelDownload() {
+  await window.api.server.cancelDownload()
+  isDownloading.value = false
+  statusMessage.value = '下载已取消'
+}
+
+function showErrorMsg(msg: string) {
+  errorMessage.value = msg
+  showError.value = true
+}
+
+function clearError() {
+  errorMessage.value = ''
+  showError.value = false
+}
+
+const canStart = computed(() => serverStatus.value === 'idle' || serverStatus.value === 'error')
+const canDownload = computed(() => !isDownloading.value && serverStatus.value !== 'starting')
 
 function getStatusLabel(): string {
   switch (serverStatus.value) {
@@ -56,38 +125,77 @@ function getStatusLabel(): string {
   <div class="settings">
     <h1>设置</h1>
 
+    <!-- 错误提示 -->
+    <div v-if="showError" class="error-alert">
+      <span>{{ errorMessage }}</span>
+      <button class="error-close" @click="clearError">&times;</button>
+    </div>
+
     <!-- 模型服务状态 -->
     <section class="settings-section">
       <h2>模型服务</h2>
       <div class="status-card">
         <div class="status-row">
           <span class="label">状态:</span>
-          <span class="status-badge" :class="serverStatus">
-            {{ getStatusLabel() }}
+          <span class="status-badge" :class="serverStatus">{{ getStatusLabel() }}</span>
+          <span class="gpu-badge" :class="gpuAvailable ? 'gpu-ok' : 'gpu-none'">
+            GPU: {{ gpuAvailable ? '可用' : '不可用' }}
           </span>
         </div>
         <div class="status-row">
           <span class="label">信息:</span>
           <span class="value">{{ statusMessage }}</span>
         </div>
-        <div v-if="downloadProgress > 0 && downloadProgress < 100" class="progress-bar">
-          <div class="progress-fill" :style="{ width: downloadProgress + '%' }"></div>
-        </div>
         <div class="actions">
           <button
+            v-if="serverStatus === 'running'"
+            class="btn btn-danger"
+            @click="stopServer"
+          >
+            停止服务
+          </button>
+          <button
+            v-else
             class="btn btn-primary"
-            :disabled="serverStatus === 'running' || serverStatus === 'starting'"
+            :disabled="serverStatus === 'starting'"
             @click="startServer"
           >
             启动服务
           </button>
-          <button
-            class="btn btn-secondary"
-            :disabled="serverStatus === 'starting'"
-            @click="downloadModel"
-          >
-            下载模型
-          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 模型下载 -->
+    <section class="settings-section">
+      <h2>模型下载</h2>
+      <div class="status-card">
+        <div v-if="isDownloading" class="download-active">
+          <div class="download-file">
+            正在下载: <strong>{{ downloadProgress.fileName }}</strong>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" :style="{ width: downloadProgress.percent + '%' }"></div>
+          </div>
+          <div class="download-meta">
+            <span>{{ downloadProgress.percent }}%</span>
+            <span>{{ downloadProgress.speed }}</span>
+            <span>阶段 {{ downloadProgress.current }}/{{ downloadProgress.total }}</span>
+          </div>
+          <div class="actions">
+            <button class="btn btn-warning" @click="cancelDownload">取消下载</button>
+          </div>
+        </div>
+        <div v-else class="download-idle">
+          <div class="actions">
+            <button
+              class="btn btn-secondary"
+              :disabled="serverStatus === 'starting'"
+              @click="downloadModel"
+            >
+              下载模型
+            </button>
+          </div>
         </div>
       </div>
     </section>
@@ -243,5 +351,73 @@ function getStatusLabel(): string {
 
 .btn-secondary:hover:not(:disabled) {
   background: #e5e7eb;
+}
+
+/* 新增错误提示 */
+.error-alert {
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.error-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: #dc2626;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+/* 新增 GPU 徽章 */
+.gpu-badge {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: auto;
+}
+.gpu-badge.gpu-ok {
+  background: #d1fae5;
+  color: #059669;
+}
+.gpu-badge.gpu-none {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+/* 新增下载样式 */
+.download-file {
+  font-size: 14px;
+  color: #374151;
+  margin-bottom: 8px;
+}
+.download-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+/* 按钮变体 */
+.btn-danger {
+  background: #dc2626;
+  color: white;
+}
+.btn-danger:hover:not(:disabled) {
+  background: #b91c1c;
+}
+.btn-warning {
+  background: #f59e0b;
+  color: white;
+}
+.btn-warning:hover:not(:disabled) {
+  background: #d97706;
 }
 </style>
