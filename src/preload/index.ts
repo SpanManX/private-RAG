@@ -9,6 +9,7 @@ const api = {
     start: () => ipcRenderer.invoke('server:start'),
     stop: () => ipcRenderer.invoke('server:stop'),
     downloadModel: () => ipcRenderer.invoke('server:download-model'),
+    cancelDownload: () => ipcRenderer.invoke('server:cancel-download'),
     onDownloadProgress: (callback: (progress: { percent: number; speed: string }) => void) =>
       ipcRenderer.on('server:download-progress', (_event, progress) => callback(progress))
   },
