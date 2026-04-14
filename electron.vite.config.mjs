@@ -29,6 +29,6 @@ export default defineConfig({
         '@': resolve('src/renderer/src')
       }
     },
-    plugins: [vue()]
-  }
+    plugins: [vue()],
+  },
 })

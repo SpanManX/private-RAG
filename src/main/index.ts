@@ -79,6 +79,8 @@ async function initializeModules(): Promise<void> {
     serverManager = new ServerManager()
     documentProcessor = new DocumentProcessor()
     indexManager = new IndexManager(userDataPath)
+    // IndexManager 需要 ServerManager 来调用 embedding API
+    indexManager.setServerManager(serverManager)
     ragEngine = new RagEngine(serverManager, indexManager)
     await indexManager.initialize()  // 初始化 LanceDB 连接
     log('Modules initialized')
@@ -106,7 +108,7 @@ function registerIpcHandlers(): void {
     ipcMain.handle('config:get-models-dir', () => serverManager.getModelsDir())
     ipcMain.handle('config:set-models-dir', (_event, dir: string) => {
         serverManager.updateModelsDir(dir)
-        return { success: true }
+        return {success: true}
     })
 
     // -------- 目录选择对话框 --------
@@ -122,7 +124,7 @@ function registerIpcHandlers(): void {
     ipcMain.handle('document:import', async (_event, filePath: string) => {
         try {
             const text = await documentProcessor.parse(filePath)
-            console.log(text,'单文件')
+            console.log(text, '单文件')
             const docId = await indexManager.addDocument(filePath, text)
             return {success: true, docId, textLength: text.length}
         } catch (error) {
@@ -152,7 +154,6 @@ function registerIpcHandlers(): void {
     })
 
 
-
     // 文档列表和删除
     ipcMain.handle('document:list', () => indexManager.listDocuments())
     ipcMain.handle('document:delete', (_event, docId: string) =>
@@ -170,17 +171,18 @@ function registerIpcHandlers(): void {
         }
     })
 
-    // 流式查询：通过 IPC 事件逐步推送响应内容
-    ipcMain.handle('rag:query-stream', async (event, question: string) => {
+    // 流式查询：返回 prompt 和引用，让前端使用 fetch-event-source 调用 llama-server
+    ipcMain.handle('rag:query-stream', async (_event, question: string) => {
         try {
-            const stream = await ragEngine.queryStream(question)
-            stream.on('data', (chunk) => event.sender.send('rag:chunk', chunk))
-            stream.on('end', () => event.sender.send('rag:end'))
-            stream.on('error', (err) => event.sender.send('rag:error', err.message))
+            const {prompt, citations} = await ragEngine.buildPrompt(question)
+            return {success: true, prompt, citations}
         } catch (error) {
-            event.sender.send('rag:error', String(error))
+            log('RAG query error:', error)
+            return {success: false, error: String(error)}
         }
     })
+
+    ipcMain.handle('rag:system-template', () => ragEngine.systemTemplate)
 
     // -------- 文件选择对话框 --------
     ipcMain.handle('dialog:open-file', async () => {

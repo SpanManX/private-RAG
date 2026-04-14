@@ -97,7 +97,7 @@ export class ServerManager {
      */
     private findModelFile(prefix: string, ext: string): string | null {
         try {
-            const files = require('fs').readdirSync(this.modelsDir, { withFileTypes: true })
+            const files = require('fs').readdirSync(this.modelsDir, {withFileTypes: true})
             for (const dir of files) {
                 if (dir.isDirectory()) {
                     const subDir = join(this.modelsDir, dir.name)
@@ -112,14 +112,15 @@ export class ServerManager {
             const rootMatch = rootFiles.find((f: string) =>
                 f.startsWith(prefix) && f.endsWith(ext))
             if (rootMatch) return join(this.modelsDir, rootMatch)
-        } catch {}
+        } catch {
+        }
         return null
     }
 
     /** 扫描查找 embedding 模型文件 */
     private findEmbeddingFile(): string | null {
         try {
-            const files = require('fs').readdirSync(this.modelsDir, { withFileTypes: true })
+            const files = require('fs').readdirSync(this.modelsDir, {withFileTypes: true})
             for (const dir of files) {
                 if (dir.isDirectory() && dir.name.includes('bge')) {
                     const subDir = join(this.modelsDir, dir.name)
@@ -128,7 +129,8 @@ export class ServerManager {
                     if (match) return join(subDir, match)
                 }
             }
-        } catch {}
+        } catch {
+        }
         return null
     }
 
@@ -170,7 +172,7 @@ export class ServerManager {
     private extractLlamaServer(zipPath: string, targetDir: string): void {
         try {
             if (!existsSync(targetDir)) {
-                mkdirSync(targetDir, { recursive: true })
+                mkdirSync(targetDir, {recursive: true})
             }
             const zip = new AdmZip(zipPath)
             zip.extractAllTo(targetDir, true)
@@ -267,10 +269,13 @@ export class ServerManager {
             '-c', '4096',
             '--port', String(this.port),
             '-ngl', this.gpuAvailable ? '99' : '0',
-            '--embedding', this.embeddingPath,
+            // '--embedding', this.embeddingPath,
+            // '--pooling', 'cls',  // BEG 必须加这个参数，否则向量效果很差
+            '--embedding',
             '--host', '127.0.0.1'
         ]
-
+        console.log('llamaServerPath:', this.llamaServerPath)
+        console.log('args:', args)
         // 启动子进程
         this.process = spawn(this.llamaServerPath, args, {
             stdio: ['ignore', 'pipe', 'pipe']
@@ -530,7 +535,12 @@ export class ServerManager {
      */
     async generate(prompt: string): Promise<string> {
         return new Promise((resolve, reject) => {
-            const body = JSON.stringify({prompt})
+            const body = JSON.stringify({
+                prompt,
+                temperature: 0.3,      // 降低随机性
+                max_tokens: 1024,       // 限制最大 token 数
+                stop: ['---', 'User question:', '\n\n\n']  // 停止序列
+            })
             const req = http.request(
                 {
                     hostname: 'localhost',
@@ -566,30 +576,89 @@ export class ServerManager {
      * POST /completion { prompt: string, stream: true }
      * 返回 Node.js Readable 流
      */
-    async generateStream(prompt: string): Promise<import('stream').Readable> {
-        const response = await fetch(`http://localhost:${this.port}/completion`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({prompt, stream: true})
+    // async generateStream(prompt: string): Promise<import('stream').Readable> {
+    //     const response = await fetch(`http://localhost:${this.port}/completion`, {
+    //         method: 'POST',
+    //         headers: {'Content-Type': 'application/json'},
+    //         body: JSON.stringify({
+    //             prompt,
+    //             stream: true,
+    //             temperature: 0.3,
+    //             max_tokens: 1024,
+    //             stop: ['---', 'User question:', '\n\n\n']
+    //         })
+    //     })
+    //
+    //     if (!response.ok) {
+    //         throw new Error(`HTTP ${response.status}`)
+    //     }
+    //
+    //     const reader = response.body?.getReader()
+    //     if (!reader) throw new Error('Failed to read response stream')
+    //
+    //     const {Readable} = await import('stream')
+    //     // 将 Web ReadableStream 转换为 Node.js Readable
+    //     return Readable.from(async function* () {
+    //         const decoder = new TextDecoder()
+    //         while (true) {
+    //             const {done, value} = await reader.read()
+    //             if (done) break
+    //             yield decoder.decode(value)
+    //         }
+    //     }())
+    // }
+
+    /**
+     * 调用 llama-server 生成文本嵌入向量
+     * POST /embedding { content: string }
+     * 返回归一化的 float32 向量数组
+     */
+    async embed(text: string): Promise<number[]> {
+        return new Promise((resolve, reject) => {
+            const body = JSON.stringify({input: text})
+            const req = http.request(
+                {
+                    host: '127.0.0.1',
+                    port: this.port,
+                    path: '/embedding',
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Content-Length': Buffer.byteLength(body)
+                    }
+                },
+                (res) => {
+                    let data = ''
+                    res.on('data', (chunk) => (data += chunk))
+                    res.on('end', () => {
+                        try {
+                            const parsed = JSON.parse(data)
+                            log(`Embedding 响应: ${JSON.stringify(parsed).substring(0, 200)}`)
+                            // llama-server 返回格式: [{"index":0,"embedding":[[...],...]}] 或 {"embedding": [...]}
+                            let embedding: number[]
+                            if (Array.isArray(parsed)) {
+                                // 数组格式: [{"embedding": [[...]]}]
+                                const emb = parsed[0]?.embedding
+                                embedding = Array.isArray(emb) ? (Array.isArray(emb[0]) ? emb[0] : emb) : []
+                            } else {
+                                // 对象格式: {"embedding": [...]}
+                                embedding = parsed.embedding || []
+                            }
+                            log(`Embedding 向量维度: ${embedding.length}`)
+                            // 归一化向量（L2 norm）
+                            const norm = Math.sqrt(embedding.reduce((sum: number, v: number) => sum + v * v, 0))
+                            const normalized = norm > 0 ? embedding.map((v: number) => v / norm) : embedding
+                            resolve(normalized)
+                        } catch {
+                            reject(new Error(`Embedding parse error: ${data}`))
+                        }
+                    })
+                }
+            )
+            req.on('error', reject)
+            req.write(body)
+            req.end()
         })
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`)
-        }
-
-        const reader = response.body?.getReader()
-        if (!reader) throw new Error('Failed to read response stream')
-
-        const {Readable} = await import('stream')
-        // 将 Web ReadableStream 转换为 Node.js Readable
-        return Readable.from(async function* () {
-            const decoder = new TextDecoder()
-            while (true) {
-                const {done, value} = await reader.read()
-                if (done) break
-                yield decoder.decode(value)
-            }
-        }())
     }
 
     /**
