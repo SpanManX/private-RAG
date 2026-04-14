@@ -58,6 +58,7 @@ export class ServerManager {
     // Qwen3-1.7B 对话模型（GGUF 格式）
     private readonly MODEL_REPO = 'Qwen/Qwen3-1.7B-GGUF'
     private readonly MODEL_FILE = 'qwen3-1.7b-q4_k_m.gguf'
+    // private readonly MODEL_FILE = 'Qwen3-1.7B-Q8_0.gguf'
     // BGE 中文 embedding 模型（用于向量化查询文本和文档）
     private readonly EMBEDDING_REPO = 'CompendiumLabs/bge-small-zh-v1.5-gguf'
     private readonly EMBEDDING_FILE = 'bge-small-zh-v1.5-f16.gguf'
@@ -66,6 +67,7 @@ export class ServerManager {
         this.refreshPaths()
         // 构造函数中检测 GPU，后续启动服务时使用缓存结果
         this.gpuAvailable = this.detectGpu()
+        console.log(`GPU 可用性（检测）: ${this.gpuAvailable}`)
         log(`GPU 可用性（缓存）: ${this.gpuAvailable}`)
     }
 

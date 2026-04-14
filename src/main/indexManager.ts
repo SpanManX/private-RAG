@@ -42,6 +42,7 @@ const CHUNK_SIZE = 512
  * Qwen3-1.7B 的 Embedding 维度是 2048
  **/
 const EMBEDDING_DIM = 2048
+// const EMBEDDING_DIM = 384
 
 export class IndexManager {
     private db!: lancedb.Connection
