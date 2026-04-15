@@ -17,7 +17,7 @@ import * as lancedb from '@lancedb/lancedb'
 import {Field, FixedSizeList, Float32, Int32, Utf8, Schema} from 'apache-arrow'
 import {Index} from '@lancedb/lancedb'
 import {log} from './logger'
-import {ServerManager} from './serverManager'
+import {getEmbeddings} from './langchain/embeddings'
 
 /** 搜索结果结构 */
 export interface SearchResult {
@@ -49,18 +49,10 @@ export class IndexManager {
     private table!: lancedb.Table
     // 内存中的文档记录缓存（用于 listDocuments）
     private docs: Map<string, DocumentRecord> = new Map()
-    // ServerManager 引用（用于调用 embedding API）
-    private serverManager!: ServerManager
+    // LangChain Embeddings 实例
+    private embeddings = getEmbeddings()
 
     constructor(private userDataPath: string) {
-    }
-
-    /**
-     * 设置 ServerManager 引用
-     * 需要在初始化后调用，因为 IndexManager 需要访问 embedding API
-     */
-    setServerManager(sm: ServerManager): void {
-        this.serverManager = sm
     }
 
     /**
@@ -203,10 +195,10 @@ export class IndexManager {
         const records: ChunkRecord[] = []
         for (let i = 0; i < chunks.length; i++) {
             const chunkText = chunks[i]
-            // 调用 llama-server 获取 embedding 向量
+            // 调用 LangChain Embeddings 获取向量
             let embedding: number[]
             try {
-                embedding = await this.serverManager.embed(chunkText)
+                embedding = await this.embeddings.embedQuery(chunkText)
             } catch (err) {
                 log(`Embedding 错误: ${err}，使用零向量`)
                 embedding = Array(EMBEDDING_DIM).fill(0)
@@ -248,7 +240,7 @@ export class IndexManager {
             // 1. 将查询文本转换为向量
             let queryVector: number[]
             try {
-                queryVector = await this.serverManager.embed(query)
+                queryVector = await this.embeddings.embedQuery(query)
                 console.log(`查询 "${query}" 的向量前5维: ${queryVector.slice(0, 5).join(', ')}`)
             } catch (err) {
                 log(`Query embedding 错误: ${err}`)

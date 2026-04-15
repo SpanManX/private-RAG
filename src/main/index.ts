@@ -79,8 +79,6 @@ async function initializeModules(): Promise<void> {
     serverManager = new ServerManager()
     documentProcessor = new DocumentProcessor()
     indexManager = new IndexManager(userDataPath)
-    // IndexManager 需要 ServerManager 来调用 embedding API
-    indexManager.setServerManager(serverManager)
     ragEngine = new RagEngine(serverManager, indexManager)
     await indexManager.initialize()  // 初始化 LanceDB 连接
     log('Modules initialized')
