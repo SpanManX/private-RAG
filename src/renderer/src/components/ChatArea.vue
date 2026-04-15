@@ -65,12 +65,22 @@ function handleKeydown(e: KeyboardEvent): void {
         :disabled="chatStore.isGenerating"
         @keydown="handleKeydown"
       />
+      <!-- 停止按钮 -->
       <button
+        v-if="chatStore.isGenerating"
+        class="stop-btn"
+        @click="chatStore.stopGenerating()"
+      >
+        ⏹ 停止
+      </button>
+      <!-- 发送按钮 -->
+      <button
+        v-else
         class="send-btn"
         :disabled="!inputText.trim() || chatStore.isGenerating"
         @click="handleSend"
       >
-        {{ chatStore.isGenerating ? '生成中...' : '发送' }}
+        发送
       </button>
     </div>
   </main>
@@ -116,9 +126,9 @@ function handleKeydown(e: KeyboardEvent): void {
   flex: 1;
   overflow-y: auto;
   padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  //display: flex;
+  //flex-direction: column;
+  //gap: 16px;
 }
 
 .input-area {
@@ -140,7 +150,7 @@ function handleKeydown(e: KeyboardEvent): void {
   outline: none;
   background: white;
   transition: border-color 0.15s;
-  min-height: 42px;
+  //min-height: 42px;
   max-height: 120px;
 }
 
@@ -169,5 +179,23 @@ function handleKeydown(e: KeyboardEvent): void {
 .send-btn:disabled {
   background: #93c5fd;
   cursor: not-allowed;
+}
+
+.stop-btn {
+  padding: 10px 20px;
+  background: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+  height: 42px;
+  flex-shrink: 0;
+}
+
+.stop-btn:hover {
+  background: #dc2626;
 }
 </style>

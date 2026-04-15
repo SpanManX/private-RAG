@@ -42,7 +42,7 @@ export class RagEngine {
 
 问题：{question}
 
-从参考文档内匹配内容，并按匹配到的内容回答给用户问题。请用一句话直接回答问题，不要解释。`
+从参考文档内匹配内容，并按匹配到的内容回答给用户问题。不要输出思考过程。`
     public systemTemplate: { role: string, content: string } = {
         role: "system",
         content: `你是一个基于参考资料回答问题的助手。`

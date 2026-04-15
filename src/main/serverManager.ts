@@ -56,8 +56,10 @@ export class ServerManager {
     // llama-server: llama.cpp Windows x64 CPU 版本（ZIP 压缩包）
     private readonly LLAMA_SERVER_URL = 'https://github.com/ggml-org/llama.cpp/releases/download/b5482/llama-b5482-bin-win-cpu-x64.zip'
     // Qwen3-1.7B 对话模型（GGUF 格式）
-    private readonly MODEL_REPO = 'Qwen/Qwen3-1.7B-GGUF'
-    private readonly MODEL_FILE = 'qwen3-1.7b-q4_k_m.gguf'
+    // private readonly MODEL_REPO = 'Qwen/Qwen3-1.7B-GGUF'
+    private readonly MODEL_REPO = 'Qwen/Qwen3-4B-GGUF'
+    // private readonly MODEL_FILE = 'qwen3-1.7b-q4_k_m.gguf'
+    private readonly MODEL_FILE = 'Qwen3-4B-Q5_K_M.gguf'
     // private readonly MODEL_FILE = 'Qwen3-1.7B-Q8_0.gguf'
     // BGE 中文 embedding 模型（用于向量化查询文本和文档）
     private readonly EMBEDDING_REPO = 'CompendiumLabs/bge-small-zh-v1.5-gguf'

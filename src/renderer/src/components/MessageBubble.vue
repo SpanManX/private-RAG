@@ -1,7 +1,17 @@
 <script setup lang="ts">
-import type { Message } from '@/stores/chatStore'
+import {computed} from 'vue'
+import MarkdownIt from 'markdown-it'
+import type {Message} from '@/stores/chatStore'
 
-defineProps<{
+// 创建 markdown-it 实例
+const md = new MarkdownIt({
+  breaks: true,  // 转换换行符为 <br>
+  html: false,    // 禁用 HTML 标签
+  linkify: true, // 自动转换链接
+  typographer: true
+})
+
+const props = defineProps<{
   message: Message
 }>()
 
@@ -11,6 +21,12 @@ function formatTime(timestamp: number): string {
     minute: '2-digit'
   })
 }
+
+// 将 Markdown 转换为 HTML
+const renderedContent = computed(() => {
+  if (!props.message.content) return ''
+  return md.render(props.message.content)
+})
 </script>
 
 <template>
@@ -22,16 +38,16 @@ function formatTime(timestamp: number): string {
       </div>
 
       <div class="content">
-        <!-- 消息正文 -->
-        <div class="text">{{ message.content || '思考中...' }}</div>
+        <!-- 消息正文（Markdown 渲染） -->
+        <div :class="{text:message.role === 'user'}" v-html="renderedContent || '思考中...'"></div>
 
         <!-- 引用来源 -->
         <div v-if="message.citations && message.citations.length > 0" class="citations">
           <div class="citations-title">📄 参考来源</div>
           <div
-            v-for="cite in message.citations"
-            :key="cite.docId"
-            class="citation-item"
+              v-for="cite in message.citations"
+              :key="cite.docId"
+              class="citation-item"
           >
             <span class="cite-file">{{ cite.fileName }}</span>
             <span class="cite-score">{{ (cite.score * 100).toFixed(0) }}% 匹配</span>
@@ -45,23 +61,16 @@ function formatTime(timestamp: number): string {
   </div>
 </template>
 
-<style scoped>
-.bubble-wrap {
-  display: flex;
-}
-
-.bubble-wrap.user {
-  justify-content: flex-end;
-}
-
-.bubble-wrap.assistant {
-  justify-content: flex-start;
-}
+<style lang="scss" scoped>
+//.bubble-wrap.user {
+//  display: flex;
+//  justify-content: flex-end;
+//}
 
 .bubble {
   display: flex;
   gap: 10px;
-  max-width: 75%;
+  //max-width: 75%;
 }
 
 .user .bubble {
@@ -71,7 +80,8 @@ function formatTime(timestamp: number): string {
 .avatar {
   font-size: 20px;
   flex-shrink: 0;
-  margin-top: 2px;
+  padding-top: 6px;
+  //margin-top: 2px;
 }
 
 .content {
@@ -81,18 +91,18 @@ function formatTime(timestamp: number): string {
 }
 
 .text {
-  padding: 10px 14px;
+  padding: 0 14px;
   border-radius: 12px;
-  font-size: 14px;
-  line-height: 1.6;
-  white-space: pre-wrap;
+  //font-size: 14px;
+  //line-height: 1.6;
+  //white-space: pre-wrap;
   word-break: break-word;
 }
 
 .user .text {
   background: #3b82f6;
   color: white;
-  border-bottom-right-radius: 4px;
+  border-top-right-radius: 4px;
 }
 
 .assistant .text {

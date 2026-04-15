@@ -20,6 +20,7 @@ export interface Citation {
 export const useChatStore = defineStore('chat', () => {
     const messages = ref<Message[]>([])
     const isGenerating = ref(false)
+    const currentCtrl = ref<AbortController | null>(null)  // 当前请求的 AbortController
 
     async function sendMessage(question: string): Promise<void> {
         // 添加用户消息
@@ -63,6 +64,7 @@ export const useChatStore = defineStore('chat', () => {
 
             // 使用 fetch-event-source 接收 SSE 流
             const ctrl = new AbortController()
+            currentCtrl.value = ctrl  // 保存引用供 stopGenerating 使用
             await fetchEventSource('http://localhost:8080/v1/chat/completions', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -92,11 +94,13 @@ export const useChatStore = defineStore('chat', () => {
                     }
                 },
                 onerror(error) {
+                    ctrl.abort()
                     console.error('SSE 错误:', error)
                     const msg = messages.value.find((m) => m.id === aiMessageId)
                     if (msg) {
-                        msg.content += `\n\n错误: ${error}`
+                        msg.content += `错误: ${error}`
                     }
+                    throw error; // 抛出错误以停止自动重试
                 }
             })
         } catch (error) {
@@ -107,16 +111,27 @@ export const useChatStore = defineStore('chat', () => {
         }
 
         isGenerating.value = false
+        currentCtrl.value = null
     }
 
     function clearHistory(): void {
         messages.value = []
     }
 
+    /** 停止当前正在生成的响应 */
+    function stopGenerating(): void {
+        if (currentCtrl.value) {
+            currentCtrl.value.abort()
+            currentCtrl.value = null
+            isGenerating.value = false
+        }
+    }
+
     return {
         messages,
         isGenerating,
         sendMessage,
-        clearHistory
+        clearHistory,
+        stopGenerating
     }
 })
