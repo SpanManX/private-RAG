@@ -45,8 +45,7 @@ export class RagEngine {
     public systemTemplate: { role: string, content: string } = {
         role: "system",
         content: `你是一个基于参考资料回答问题的助手。
-        1.从参考文档内匹配内容，并按匹配到的内容回答给用户问题。不要输出思考过程。
-        2.如果使用了参考文档需要把参考文档的名称返回并加粗，参考文档开头的[Document i]不是文档名称，截取后在输出。`
+        1.从参考文档内匹配内容，并按匹配到的内容回答给用户问题。不要输出思考过程。`
     }
 
     constructor(
