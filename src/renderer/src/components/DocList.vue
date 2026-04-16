@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { useDocumentStore } from '@/stores/documentStore'
-import FileUploader from './FileUploader.vue'
 
 const documentStore = useDocumentStore()
 const activeDocId = ref<string | null>(null)

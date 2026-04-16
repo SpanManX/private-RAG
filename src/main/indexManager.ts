@@ -257,8 +257,8 @@ export class IndexManager {
 
             log(`搜索结果数量: ${results.length}, 距离: ${results.map(r => (r as any)._distance).join(', ')}`)
 
-            // 过滤掉距离过大的结果（距离 > 0.1 表示相似度很低）
-            const DISTANCE_THRESHOLD = 0.1
+            // 过滤掉距离过大的结果（距离 > 0.8 表示相似度很低）
+            const DISTANCE_THRESHOLD = 0.8
             return (Array.isArray(results) ? results : [])
                 .filter((r: any) => (r as any)._distance < DISTANCE_THRESHOLD)
                 .map((r: any) => ({

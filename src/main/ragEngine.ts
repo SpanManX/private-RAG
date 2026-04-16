@@ -11,7 +11,7 @@
  * 用户问题 → 检索相似文档 → 构建 prompt → LLM 生成答案 → 返回答案+引用
  */
 
-import {ServerManager} from './serverManager'
+// import {ServerManager} from './serverManager'
 import {IndexManager} from './indexManager'
 
 /** RAG 答案块 */
@@ -44,12 +44,18 @@ export class RagEngine {
 
     public systemTemplate: { role: string, content: string } = {
         role: "system",
-        content: `你是一个基于参考资料回答问题的助手。
-        1.从参考文档内匹配内容，并按匹配到的内容回答给用户问题。不要输出思考过程。`
+        content: `
+        # 任务描述
+        你是一个文档助手。请根据提供的 [参考文档] 回答问题。
+        
+        # 约束规则
+        1. 如果 [参考文档] 中没有包含问题的答案，请直接回复：“抱歉，在现有文件中未找到相关内容。”，然后根据你的知识库尝试回答用户的关联问题。
+        2. 如果 [参考文档] 包含答案，请严格根据文档进行总结，不要胡言乱语。
+        3. 如果 [参考文档] 包含答案，请在回答的最后引用相关文件。`
     }
 
     constructor(
-        private serverManager: ServerManager,
+        // private serverManager: ServerManager,
         private indexManager: IndexManager
     ) {
     }
@@ -60,47 +66,47 @@ export class RagEngine {
      * @param question 用户问题
      * @returns 查询结果（成功/失败、答案、引用）
      */
-    async query(question: string): Promise<{
-        success: boolean
-        answer?: string
-        citations?: RagChunk['citations']
-        error?: string
-    }> {
-        // ===== 1. 检索相关文档块 =====
-        const searchResults = await this.indexManager.search(question, 5)
-
-        // 没有相关文档
-        if (searchResults.length === 0) {
-            return {
-                success: true,
-                answer: '未找到相关文件。请先导入文件。',
-                citations: []
-            }
-        }
-
-        // ===== 2. 构建上下文 =====
-        const context = searchResults
-            .map((r, i) => `[Document ${i + 1}] ${r.fileName}\n${r.chunkText}`)
-            .join('\n\n')
-
-        // ===== 3. 构建 prompt =====
-        const prompt = this.queryTemplate
-            .replace('{context}', context)
-            .replace('{question}', question)
-
-        // ===== 4. 生成答案 =====
-        const answer = await this.serverManager.generate(prompt)
-
-        // ===== 5. 构建引用来源 =====
-        const citations = searchResults.map((r) => ({
-            docId: r.docId,
-            fileName: r.fileName,
-            score: r.score,
-            excerpt: r.chunkText.substring(0, 100) + '...'
-        }))
-
-        return {success: true, answer, citations}
-    }
+    // async query(question: string): Promise<{
+    //     success: boolean
+    //     answer?: string
+    //     citations?: RagChunk['citations']
+    //     error?: string
+    // }> {
+    //     // ===== 1. 检索相关文档块 =====
+    //     const searchResults = await this.indexManager.search(question, 5)
+    //
+    //     // 没有相关文档
+    //     if (searchResults.length === 0) {
+    //         return {
+    //             success: true,
+    //             answer: '未找到相关文件。请先导入文件。',
+    //             citations: []
+    //         }
+    //     }
+    //
+    //     // ===== 2. 构建上下文 =====
+    //     const context = searchResults
+    //         .map((r, i) => `[Document ${i + 1}] ${r.fileName}\n${r.chunkText}`)
+    //         .join('\n\n')
+    //
+    //     // ===== 3. 构建 prompt =====
+    //     const prompt = this.queryTemplate
+    //         .replace('{context}', context)
+    //         .replace('{question}', question)
+    //
+    //     // ===== 4. 生成答案 =====
+    //     const answer = await this.serverManager.generate(prompt)
+    //
+    //     // ===== 5. 构建引用来源 =====
+    //     const citations = searchResults.map((r) => ({
+    //         docId: r.docId,
+    //         fileName: r.fileName,
+    //         score: r.score,
+    //         excerpt: r.chunkText.substring(0, 100) + '...'
+    //     }))
+    //
+    //     return {success: true, answer, citations}
+    // }
 
     /**
      * 构建 RAG prompt（用于流式查询）
@@ -111,7 +117,7 @@ export class RagEngine {
         const searchResults = await this.indexManager.search(question, 5)
 
         if (searchResults.length === 0) {
-            return {prompt: '（未找到相关文件）', citations: []}
+            return {prompt: question, citations: []}
         }
 
         const context = searchResults

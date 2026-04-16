@@ -617,53 +617,53 @@ export class ServerManager {
      * POST /embedding { content: string }
      * 返回归一化的 float32 向量数组
      */
-    async embed(text: string): Promise<number[]> {
-        return new Promise((resolve, reject) => {
-            const body = JSON.stringify({input: text})
-            const req = http.request(
-                {
-                    host: '127.0.0.1',
-                    port: this.port,
-                    path: '/embedding',
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Content-Length': Buffer.byteLength(body)
-                    }
-                },
-                (res) => {
-                    let data = ''
-                    res.on('data', (chunk) => (data += chunk))
-                    res.on('end', () => {
-                        try {
-                            const parsed = JSON.parse(data)
-                            log(`Embedding 响应: ${JSON.stringify(parsed).substring(0, 200)}`)
-                            // llama-server 返回格式: [{"index":0,"embedding":[[...],...]}] 或 {"embedding": [...]}
-                            let embedding: number[]
-                            if (Array.isArray(parsed)) {
-                                // 数组格式: [{"embedding": [[...]]}]
-                                const emb = parsed[0]?.embedding
-                                embedding = Array.isArray(emb) ? (Array.isArray(emb[0]) ? emb[0] : emb) : []
-                            } else {
-                                // 对象格式: {"embedding": [...]}
-                                embedding = parsed.embedding || []
-                            }
-                            log(`Embedding 向量维度: ${embedding.length}`)
-                            // 归一化向量（L2 norm）
-                            const norm = Math.sqrt(embedding.reduce((sum: number, v: number) => sum + v * v, 0))
-                            const normalized = norm > 0 ? embedding.map((v: number) => v / norm) : embedding
-                            resolve(normalized)
-                        } catch {
-                            reject(new Error(`Embedding parse error: ${data}`))
-                        }
-                    })
-                }
-            )
-            req.on('error', reject)
-            req.write(body)
-            req.end()
-        })
-    }
+    // async embed(text: string): Promise<number[]> {
+    //     return new Promise((resolve, reject) => {
+    //         const body = JSON.stringify({input: text})
+    //         const req = http.request(
+    //             {
+    //                 host: '127.0.0.1',
+    //                 port: this.port,
+    //                 path: '/embedding',
+    //                 method: 'POST',
+    //                 headers: {
+    //                     'Content-Type': 'application/json',
+    //                     'Content-Length': Buffer.byteLength(body)
+    //                 }
+    //             },
+    //             (res) => {
+    //                 let data = ''
+    //                 res.on('data', (chunk) => (data += chunk))
+    //                 res.on('end', () => {
+    //                     try {
+    //                         const parsed = JSON.parse(data)
+    //                         log(`Embedding 响应: ${JSON.stringify(parsed).substring(0, 200)}`)
+    //                         // llama-server 返回格式: [{"index":0,"embedding":[[...],...]}] 或 {"embedding": [...]}
+    //                         let embedding: number[]
+    //                         if (Array.isArray(parsed)) {
+    //                             // 数组格式: [{"embedding": [[...]]}]
+    //                             const emb = parsed[0]?.embedding
+    //                             embedding = Array.isArray(emb) ? (Array.isArray(emb[0]) ? emb[0] : emb) : []
+    //                         } else {
+    //                             // 对象格式: {"embedding": [...]}
+    //                             embedding = parsed.embedding || []
+    //                         }
+    //                         log(`Embedding 向量维度: ${embedding.length}`)
+    //                         // 归一化向量（L2 norm）
+    //                         const norm = Math.sqrt(embedding.reduce((sum: number, v: number) => sum + v * v, 0))
+    //                         const normalized = norm > 0 ? embedding.map((v: number) => v / norm) : embedding
+    //                         resolve(normalized)
+    //                     } catch {
+    //                         reject(new Error(`Embedding parse error: ${data}`))
+    //                     }
+    //                 })
+    //             }
+    //         )
+    //         req.on('error', reject)
+    //         req.write(body)
+    //         req.end()
+    //     })
+    // }
 
     /**
      * 等待 llama-server 就绪

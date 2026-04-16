@@ -21,7 +21,6 @@
     "@electron-toolkit/utils": "^4.0.0",
     "@huggingface/hub": "^2.11.0",
     "@lancedb/lancedb": "^0.27.2",
-    "@langchain/community": "^1.1.27",
     "@langchain/core": "^1.1.40",
     "@langchain/openai": "^1.4.4",
     "@microsoft/fetch-event-source": "^2.0.1",
@@ -32,12 +31,10 @@
     "marked": "^15.0.12",
     "pdf-parse": "^1.1.1",
     "pinia": "^2.3.0",
-    "sse-z": "^0.3.0",
     "vue": "^3.5.13",
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
-    "sass": "^1.99.0",
     "@electron-toolkit/tsconfig": "^1.0.1",
     "@rushstack/eslint-patch": "^1.10.5",
     "@types/adm-zip": "^0.5.8",
@@ -51,6 +48,7 @@
     "eslint": "^9.17.0",
     "eslint-plugin-vue": "^9.32.0",
     "prettier": "^3.4.2",
+    "sass": "^1.99.0",
     "typescript": "^5.7.3",
     "vite": "^5.4.0",
     "vue-tsc": "^2.2.0"

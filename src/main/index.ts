@@ -79,7 +79,8 @@ async function initializeModules(): Promise<void> {
     serverManager = new ServerManager()
     documentProcessor = new DocumentProcessor()
     indexManager = new IndexManager(userDataPath)
-    ragEngine = new RagEngine(serverManager, indexManager)
+    // ragEngine = new RagEngine(serverManager, indexManager)
+    ragEngine = new RagEngine(indexManager)
     await indexManager.initialize()  // 初始化 LanceDB 连接
     log('Modules initialized')
 }
@@ -160,14 +161,14 @@ function registerIpcHandlers(): void {
 
     // -------- RAG 问答 --------
     // 非流式查询：搜索 → 构建 prompt → 调用 llama-server → 返回结果
-    ipcMain.handle('rag:query', async (_event, question: string) => {
-        try {
-            return await ragEngine.query(question)
-        } catch (error) {
-            log('RAG query error:', error)
-            return {success: false, error: String(error)}
-        }
-    })
+    // ipcMain.handle('rag:query', async (_event, question: string) => {
+    //     try {
+    //         return await ragEngine.query(question)
+    //     } catch (error) {
+    //         log('RAG query error:', error)
+    //         return {success: false, error: String(error)}
+    //     }
+    // })
 
     // 流式查询：返回 prompt 和引用，让前端使用 fetch-event-source 调用 llama-server
     ipcMain.handle('rag:query-stream', async (_event, question: string) => {
