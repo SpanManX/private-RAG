@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import DocList from './DocList.vue'
 import FileUploader from './FileUploader.vue'
@@ -7,14 +7,97 @@ import FileUploader from './FileUploader.vue'
 const router = useRouter()
 const route = useRoute()
 
-onMounted(() => {
-  // 初始化时保持默认路由
+const serverStatus = ref<'idle' | 'starting' | 'running' | 'error'>('idle')
+const statusMessage = ref('')
+const gpuAvailable = ref(false)
+const autoStart = ref(false)
+let statusPollInterval: ReturnType<typeof setInterval> | null = null
+
+onMounted(async () => {
+  await checkServerStatus()
+  startStatusPoll()
 })
+
+onUnmounted(() => {
+  stopStatusPoll()
+})
+
+function startStatusPoll() {
+  statusPollInterval = setInterval(checkServerStatus, 3000)
+}
+
+function stopStatusPoll() {
+  if (statusPollInterval) {
+    clearInterval(statusPollInterval)
+    statusPollInterval = null
+  }
+}
+
+async function checkServerStatus() {
+  const status = await window.api.server.status()
+  serverStatus.value = status.state === 'running' ? 'running' : (status.state === 'error' ? 'error' : 'idle')
+  statusMessage.value = status.message
+  gpuAvailable.value = status.gpuAvailable ?? false
+}
+
+async function toggleServer() {
+  if (serverStatus.value === 'running') {
+    await window.api.server.stop()
+  } else {
+    serverStatus.value = 'starting'
+    statusMessage.value = '正在启动...'
+    try {
+      await window.api.server.start()
+    } catch (e) {
+      statusMessage.value = '启动失败'
+      serverStatus.value = 'error'
+    }
+  }
+  await checkServerStatus()
+}
+
+function getStatusLabel(): string {
+  switch (serverStatus.value) {
+    case 'running': return '运行中'
+    case 'starting': return '启动中...'
+    case 'error': return '异常'
+    default: return '未启动'
+  }
+}
 </script>
 
 <template>
   <aside class="sidebar">
     <div class="sidebar-content">
+      <!-- 服务状态卡片 -->
+      <div class="server-card" :class="serverStatus">
+        <div class="server-header">
+          <div class="server-indicator">
+            <span class="indicator-dot"></span>
+            <span class="indicator-pulse" v-if="serverStatus === 'running'"></span>
+          </div>
+          <div class="server-info">
+            <span class="server-label">模型服务</span>
+            <span class="server-status-text">{{ getStatusLabel() }}</span>
+          </div>
+        </div>
+        <div class="server-actions">
+          <button
+            class="server-btn"
+            :class="serverStatus === 'running' ? 'btn-stop' : 'btn-start'"
+            :disabled="serverStatus === 'starting'"
+            @click="toggleServer"
+          >
+            <span v-if="serverStatus === 'starting'" class="btn-loading">●</span>
+            <span v-else>{{ serverStatus === 'running' ? '停止' : '启动' }}</span>
+          </button>
+          <span v-if="gpuAvailable" class="gpu-chip">
+            <span class="gpu-dot"></span>
+            GPU
+          </span>
+        </div>
+      </div>
+
       <!-- 导航 -->
       <nav class="nav-list">
         <router-link to="/" class="nav-item" :class="{ active: route.path === '/' }">
@@ -59,6 +142,170 @@ onMounted(() => {
   height: 100%;
 }
 
+/* 服务状态卡片 */
+.server-card {
+  margin: 12px;
+  padding: 14px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s;
+}
+
+.server-card.running {
+  background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+  border-color: #86efac;
+}
+
+.server-card.error {
+  background: linear-gradient(135deg, #fef2f2 0%, #fef2f2 100%);
+  border-color: #fca5a5;
+}
+
+.server-card.starting {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border-color: #fcd34d;
+}
+
+.server-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.server-indicator {
+  position: relative;
+  width: 10px;
+  height: 10px;
+}
+
+.indicator-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #9ca3af;
+  position: relative;
+  z-index: 1;
+}
+
+.server-card.idle .indicator-dot { background: #9ca3af; }
+.server-card.starting .indicator-dot { background: #f59e0b; }
+.server-card.running .indicator-dot {
+  background: #22c55e;
+  box-shadow: 0 0 6px #22c55e80;
+}
+.server-card.error .indicator-dot { background: #ef4444; }
+
+.indicator-pulse {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #22c55e40;
+  animation: pulse 2s ease-out infinite;
+}
+
+@keyframes pulse {
+  0% { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+}
+
+.server-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.server-label {
+  font-size: 11px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.server-status-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.server-card.running .server-status-text { color: #15803d; }
+.server-card.error .server-status-text { color: #dc2626; }
+.server-card.starting .server-status-text { color: #d97706; }
+
+.server-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.server-btn {
+  flex: 1;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-start {
+  background: #3b82f6;
+  color: white;
+}
+
+.btn-start:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.btn-stop {
+  background: #ef4444;
+  color: white;
+}
+
+.btn-stop:hover:not(:disabled) {
+  background: #dc2626;
+}
+
+.server-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-loading {
+  animation: blink 0.8s infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.gpu-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: #dcfce7;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #15803d;
+}
+
+.gpu-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+}
+
+/* 导航 */
 .nav-list {
   display: flex;
   flex-direction: column;

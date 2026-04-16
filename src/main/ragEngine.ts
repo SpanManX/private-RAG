@@ -49,7 +49,7 @@ export class RagEngine {
         你是一个文档助手。请根据提供的 [参考文档] 回答问题。
         
         # 约束规则
-        1. 如果 [参考文档] 中没有包含问题的答案，请直接回复：“抱歉，在现有文件中未找到相关内容。”，然后根据你的知识库尝试回答用户的关联问题。
+        1. 如果 [参考文档] 中没有包含问题的答案，请回复：“抱歉，在现有文件中未找到相关内容。”，然后必须根据你的通用知识库，对用户提到的关键词进行科普或回答。
         2. 如果 [参考文档] 包含答案，请严格根据文档进行总结，不要胡言乱语。
         3. 如果 [参考文档] 包含答案，请在回答的最后引用相关文件。`
     }
@@ -121,7 +121,8 @@ export class RagEngine {
         }
 
         const context = searchResults
-            .map((r, i) => `[Document ${i + 1}] ${r.fileName}\n${r.chunkText}`)
+            // .map((r, i) => `[Document ${i + 1}] ${r.fileName}\n${r.chunkText}`)
+            .map((r) => `文件名：${r.fileName}\n${r.chunkText}`)
             .join('\n\n')
 
         const prompt = this.queryTemplate
