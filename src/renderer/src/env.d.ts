@@ -23,7 +23,7 @@ interface Window {
             onDownloadProgress: (callback: (progress: {
                 percent: number
                 speed: string
-                phase: 'llama-server' | 'model' | 'embedding' | 'done'
+                phase: 'model' | 'embedding' | 'done'
                 fileName: string
                 current: number
                 total: number

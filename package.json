@@ -19,7 +19,6 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^4.0.0",
-    "@huggingface/hub": "^2.11.0",
     "@lancedb/lancedb": "^0.27.2",
     "@langchain/core": "^1.1.40",
     "@langchain/openai": "^1.4.4",
@@ -27,9 +26,9 @@
     "adm-zip": "^0.5.17",
     "apache-arrow": "^18.1.0",
     "axios": "^1.15.0",
+    "isomorphic-git": "^1.37.5",
     "mammoth": "^1.8.0",
     "markdown-it": "^14.1.1",
-    "marked": "^15.0.12",
     "pdf-parse": "^1.1.1",
     "pinia": "^2.3.0",
     "vue": "^3.5.13",

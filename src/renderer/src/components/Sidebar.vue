@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import {ref, onMounted, onUnmounted} from 'vue'
+import {useRouter, useRoute} from 'vue-router'
 import DocList from './DocList.vue'
 import FileUploader from './FileUploader.vue'
 
@@ -58,10 +58,14 @@ async function toggleServer() {
 
 function getStatusLabel(): string {
   switch (serverStatus.value) {
-    case 'running': return '运行中'
-    case 'starting': return '启动中...'
-    case 'error': return '异常'
-    default: return '未启动'
+    case 'running':
+      return '运行中'
+    case 'starting':
+      return '启动中...'
+    case 'error':
+      return '异常'
+    default:
+      return '未启动'
   }
 }
 </script>
@@ -72,29 +76,32 @@ function getStatusLabel(): string {
       <!-- 服务状态卡片 -->
       <div class="server-card" :class="serverStatus">
         <div class="server-header">
-          <div class="server-indicator">
-            <span class="indicator-dot"></span>
+<!--          <div class="server-indicator">-->
+          <div class="indicator-dot">
+<!--            <span class="indicator-dot"></span>-->
             <span class="indicator-pulse" v-if="serverStatus === 'running'"></span>
           </div>
           <div class="server-info">
             <span class="server-label">模型服务</span>
             <span class="server-status-text">{{ getStatusLabel() }}</span>
           </div>
+          <div class="gpu-chip">
+            <div :class="gpuAvailable ? 'gpu-ok' : 'gpu-none'">
+              <span class="gpu-dot"></span>
+              GPU:{{ gpuAvailable ? '可用' : '不可用' }}
+            </div>
+          </div>
         </div>
         <div class="server-actions">
           <button
-            class="server-btn"
-            :class="serverStatus === 'running' ? 'btn-stop' : 'btn-start'"
-            :disabled="serverStatus === 'starting'"
-            @click="toggleServer"
+              class="server-btn"
+              :class="serverStatus === 'running' ? 'btn-stop' : 'btn-start'"
+              :disabled="serverStatus === 'starting'"
+              @click="toggleServer"
           >
             <span v-if="serverStatus === 'starting'" class="btn-loading">●</span>
             <span v-else>{{ serverStatus === 'running' ? '停止' : '启动' }}</span>
           </button>
-          <span v-if="gpuAvailable" class="gpu-chip">
-            <span class="gpu-dot"></span>
-            GPU
-          </span>
         </div>
       </div>
 
@@ -105,9 +112,9 @@ function getStatusLabel(): string {
           <span>对话</span>
         </router-link>
         <router-link
-          to="/settings"
-          class="nav-item"
-          :class="{ active: route.path === '/settings' }"
+            to="/settings"
+            class="nav-item"
+            :class="{ active: route.path === '/settings' }"
         >
           <span class="nav-icon">⚙️</span>
           <span>设置</span>
@@ -117,14 +124,14 @@ function getStatusLabel(): string {
       <!-- 文档列表 -->
       <div class="doc-section">
         <div class="section-title">📚 知识库</div>
-        <DocList />
-        <FileUploader @imported="() => {}" />
+        <DocList/>
+        <FileUploader @imported="() => {}"/>
       </div>
     </div>
   </aside>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .sidebar {
   width: 240px;
   min-width: 200px;
@@ -169,7 +176,7 @@ function getStatusLabel(): string {
 
 .server-header {
   display: flex;
-  align-items: center;
+  //align-items: center;
   gap: 10px;
   margin-bottom: 12px;
 }
@@ -181,37 +188,52 @@ function getStatusLabel(): string {
 }
 
 .indicator-dot {
+  margin-top: 3px;
+  display: inline-block;
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #9ca3af;
   position: relative;
-  z-index: 1;
 }
 
-.server-card.idle .indicator-dot { background: #9ca3af; }
-.server-card.starting .indicator-dot { background: #f59e0b; }
+.server-card.idle .indicator-dot {
+  background: #9ca3af;
+}
+
+.server-card.starting .indicator-dot {
+  background: #f59e0b;
+}
+
 .server-card.running .indicator-dot {
   background: #22c55e;
   box-shadow: 0 0 6px #22c55e80;
 }
-.server-card.error .indicator-dot { background: #ef4444; }
+
+.server-card.error .indicator-dot {
+  background: #ef4444;
+}
 
 .indicator-pulse {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 20px;
-  height: 20px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: #22c55e40;
   animation: pulse 2s ease-out infinite;
 }
 
 @keyframes pulse {
-  0% { transform: translate(-50%, -50%) scale(0.5); opacity: 1; }
-  100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(4);
+    opacity: 0;
+  }
 }
 
 .server-info {
@@ -233,9 +255,17 @@ function getStatusLabel(): string {
   color: #1e293b;
 }
 
-.server-card.running .server-status-text { color: #15803d; }
-.server-card.error .server-status-text { color: #dc2626; }
-.server-card.starting .server-status-text { color: #d97706; }
+.server-card.running .server-status-text {
+  color: #15803d;
+}
+
+.server-card.error .server-status-text {
+  color: #dc2626;
+}
+
+.server-card.starting .server-status-text {
+  color: #d97706;
+}
 
 .server-actions {
   display: flex;
@@ -282,27 +312,46 @@ function getStatusLabel(): string {
 }
 
 @keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
 }
 
 .gpu-chip {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  background: #dcfce7;
-  border-radius: 4px;
   font-size: 11px;
   font-weight: 500;
-  color: #15803d;
-}
+  flex: 1;
+  text-align: right;
 
-.gpu-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #22c55e;
+  & > div {
+    display: inline-block;
+    border-radius: 4px;
+    padding: 4px 8px;
+  }
+
+  .gpu-ok {
+    background: #d1fae5;
+    color: #059669;
+  }
+
+  .gpu-none {
+    background: #f3f4f6;
+    color: #6b7280;
+  }
+
+  .gpu-dot {
+    display: inline-block;
+    vertical-align: middle;
+    margin-right: 4px;
+    margin-bottom: 3px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
 }
 
 /* 导航 */

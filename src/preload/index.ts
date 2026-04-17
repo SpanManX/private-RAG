@@ -30,7 +30,14 @@ const api = {
         /** 取消下载 */
         cancelDownload: () => ipcRenderer.invoke('server:cancel-download'),
         /** 监听下载进度（流式事件） */
-        onDownloadProgress: (callback: (progress: { percent: number; speed: string }) => void) =>
+        onDownloadProgress: (callback: (progress: {
+            percent: number
+            speed: string
+            phase: 'model' | 'embedding' | 'done'
+            fileName: string
+            current: number
+            total: number
+        }) => void) =>
             ipcRenderer.on('server:download-progress', (_event, progress) => callback(progress))
     },
 

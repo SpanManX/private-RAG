@@ -14,14 +14,19 @@
 
 import {spawn, ChildProcess} from 'child_process'
 import {join} from 'path'
-import {existsSync, mkdirSync, createWriteStream, writeFileSync} from 'fs'
+import {existsSync, mkdirSync} from 'fs'
 import {BrowserWindow} from 'electron'
-import http from 'http'
-import https from 'https'
-import AdmZip from 'adm-zip'
-import {downloadFile} from '@huggingface/hub'
+// import http from 'http'
+// import https from 'https'
+// import AdmZip from 'adm-zip'
+import git from 'isomorphic-git'
 import {log} from './logger'
 import {getModelsDir, setModelsDir} from './store'
+import * as fs from "node:fs";
+import * as nodeHttp from 'http'
+import http from 'isomorphic-git/http/node'
+import axios from "axios";
+import path from "node:path";
 
 /** llama-server 服务状态 */
 export interface ServerStatus {
@@ -34,7 +39,7 @@ export interface ServerStatus {
 export interface DownloadProgress {
     percent: number         // 进度百分比 0-100
     speed: string          // 下载速度字符串
-    phase: 'llama-server' | 'model' | 'embedding' | 'done'  // 当前阶段
+    phase: 'model' | 'embedding' | 'done'  // 当前阶段
     fileName: string        // 当前下载的文件名
     current: number        // 当前阶段编号 1-3
     total: number           // 总阶段数
@@ -44,7 +49,7 @@ export class ServerManager {
     private process: ChildProcess | null = null
     private port = 8080                       // llama-server HTTP 端口
     private modelPath!: string                 // Qwen 模型路径
-    private embeddingPath!: string              // Embedding 模型路径
+    private _embeddingPath!: string              // Embedding 模型路径（预留）
     private llamaServerPath!: string           // llama-server.exe 路径
     private modelsDir!: string                 // 模型文件目录
     private cancellationToken: { cancelled: boolean } = {cancelled: false}
@@ -54,15 +59,13 @@ export class ServerManager {
 
     // ========== 模型下载地址配置 ==========
     // llama-server: llama.cpp Windows x64 CPU 版本（ZIP 压缩包）
-    private readonly LLAMA_SERVER_URL = 'https://github.com/ggml-org/llama.cpp/releases/download/b5482/llama-b5482-bin-win-cpu-x64.zip'
+    // private readonly LLAMA_SERVER_URL = 'https://github.com/ggml-org/llama.cpp/releases/download/b5482/llama-b5482-bin-win-cpu-x64.zip'
     // Qwen3-1.7B 对话模型（GGUF 格式）
     // private readonly MODEL_REPO = 'Qwen/Qwen3-1.7B-GGUF'
-    private readonly MODEL_REPO = 'Qwen/Qwen3-4B-GGUF'
     // private readonly MODEL_FILE = 'qwen3-1.7b-q4_k_m.gguf'
     private readonly MODEL_FILE = 'Qwen3-4B-Q5_K_M.gguf'
     // private readonly MODEL_FILE = 'Qwen3-1.7B-Q8_0.gguf'
     // BGE 中文 embedding 模型（用于向量化查询文本和文档）
-    private readonly EMBEDDING_REPO = 'CompendiumLabs/bge-small-zh-v1.5-gguf'
     private readonly EMBEDDING_FILE = 'bge-small-zh-v1.5-f16.gguf'
 
     constructor() {
@@ -86,12 +89,10 @@ export class ServerManager {
         this.llamaServerPath = this.findLlamaServerExe(llamaServerDir)
 
         // 扫描查找 Qwen GGUF 模型文件
-        this.modelPath = this.findModelFile('Qwen3', '.gguf')
-            || join(this.modelsDir, 'qwen3-1.7b-q4_k_m.gguf')
+        this.modelPath = this.findModelFile('Qwen3', '.gguf') || ''
 
         // 扫描查找 embedding 模型文件
-        this.embeddingPath = this.findEmbeddingFile()
-            || join(this.modelsDir, 'bge-small-zh-v1.5-f16.gguf')
+        this._embeddingPath = this.findEmbeddingFile() || ''
     }
 
     /**
@@ -138,10 +139,6 @@ export class ServerManager {
         return null
     }
 
-    private getLlamaServerDir(): string {
-        return join(this.modelsDir, 'llama-server')
-    }
-
     /** 查找 llama-server.exe，支持动态文件名 */
     private findLlamaServerExe(dir: string): string {
         try {
@@ -154,40 +151,29 @@ export class ServerManager {
         }
     }
 
-    private findExistingLlamaServer(dir: string): string | null {
-        try {
-            const files = require('fs').readdirSync(dir)
-            const exe = files.find((f: string) =>
-                f.startsWith('llama-server') && f.endsWith('.exe'))
-            return exe ? join(dir, exe) : null
-        } catch {
-            return null
-        }
-    }
-
-    private getLlamaServerZipPath(): string {
-        return join(this.modelsDir, 'llama-server.zip')
-    }
+    // private getLlamaServerZipPath(): string {
+    //     return join(this.modelsDir, 'llama-server.zip')
+    // }
 
     /**
      * 解压 llama-server ZIP 包
      * llama.cpp 发布包是 ZIP 格式，需要解压到 llama-server 目录
      */
-    private extractLlamaServer(zipPath: string, targetDir: string): void {
-        try {
-            if (!existsSync(targetDir)) {
-                mkdirSync(targetDir, {recursive: true})
-            }
-            const zip = new AdmZip(zipPath)
-            zip.extractAllTo(targetDir, true)
-            log(`解压成功到: ${targetDir}`)
-            // 解压后刷新路径，获取实际文件名
-            this.refreshPaths()
-        } catch (err) {
-            log(`解压失败: ${err}`)
-            throw err
-        }
-    }
+    // private extractLlamaServer(zipPath: string, targetDir: string): void {
+    //     try {
+    //         if (!existsSync(targetDir)) {
+    //             mkdirSync(targetDir, {recursive: true})
+    //         }
+    //         const zip = new AdmZip(zipPath)
+    //         zip.extractAllTo(targetDir, true)
+    //         log(`解压成功到: ${targetDir}`)
+    //         // 解压后刷新路径，获取实际文件名
+    //         this.refreshPaths()
+    //     } catch (err) {
+    //         log(`解压失败: ${err}`)
+    //         throw err
+    //     }
+    // }
 
     /** 获取当前模型目录 */
     getModelsDir(): string {
@@ -315,7 +301,7 @@ export class ServerManager {
 
     /**
      * 下载所有必需的模型文件
-     * 三阶段：llama-server → Qwen 模型 → Embedding 模型
+     * 两阶段：Qwen 模型 → Embedding 模型（llama-server 打包进安装包）
      * 进度通过 IPC 事件实时推送到渲染进程
      */
     async downloadModel(): Promise<void> {
@@ -330,339 +316,143 @@ export class ServerManager {
                 mkdirSync(this.modelsDir, {recursive: true})
             }
 
-            // ===== 阶段 1: 下载并解压 llama-server =====
-            const llamaServerDir = this.getLlamaServerDir()
-            const existingExe = this.findExistingLlamaServer(llamaServerDir)
-            if (existingExe && this.fileExists(existingExe, 1024)) {
-                // 已存在，跳过
-                win.webContents.send('server:download-progress', {
-                    percent: 100, speed: '已存在', phase: 'llama-server',
-                    fileName: 'llama-server.exe', current: 1, total: 3
-                })
-            } else {
-                // 下载并解压
-                const zipPath = this.getLlamaServerZipPath()
-                await this.downloadFileHttp(this.LLAMA_SERVER_URL, zipPath, win, 'llama-server', 1)
-                this.extractLlamaServer(zipPath, llamaServerDir)
-            }
-
-            // ===== 阶段 2: 下载 Qwen3 模型 =====
+            // ===== 阶段 1: 下载 Qwen3 模型 =====
             if (this.fileExists(this.modelPath, 100_000_000)) {
                 win.webContents.send('server:download-progress', {
                     percent: 100, speed: '已存在', phase: 'model',
-                    fileName: this.MODEL_FILE, current: 2, total: 3
+                    fileName: this.MODEL_FILE, current: 1, total: 2
                 })
             } else {
-                await this.downloadFromHub(this.MODEL_REPO, this.MODEL_FILE, this.modelPath, win, 'model', 2)
+                //     await this.cloneWithProgress(win, 'model', 1, 2)
+                await this.downloadModelFile(win, 'model', 1, 2)
             }
 
-            // ===== 阶段 3: 下载 Embedding 模型 =====
-            if (this.fileExists(this.embeddingPath, 10_000_000)) {
-                win.webContents.send('server:download-progress', {
-                    percent: 100, speed: '已存在', phase: 'embedding',
-                    fileName: this.EMBEDDING_FILE, current: 3, total: 3
-                })
-            } else {
-                await this.downloadFromHub(this.EMBEDDING_REPO, this.EMBEDDING_FILE, this.embeddingPath, win, 'embedding', 3)
-            }
+            // ===== 阶段 2: 下载 Embedding 模型 =====
+            // if (this.fileExists(this.embeddingPath, 10_000_000)) {
+            //     win.webContents.send('server:download-progress', {
+            //         percent: 100, speed: '已存在', phase: 'embedding',
+            //         fileName: this.EMBEDDING_FILE, current: 2, total: 2
+            //     })
+            // } else {
+            //     await this.cloneWithProgress(win, 'embedding', 2, 2)
+            // }
 
             // 全部完成
             win.webContents.send('server:download-progress', {
                 percent: 100, speed: 'All files ready', phase: 'done',
-                fileName: '', current: 3, total: 3
+                fileName: '', current: 2, total: 2
             })
         } finally {
             this.isDownloading = false
         }
     }
 
-    /**
-     * 使用 HuggingFace SDK 下载模型文件
-     * 通过 hf-mirror.com 镜像站加速国内下载
-     */
-    private async downloadFromHub(
-        repo: string,
-        fileName: string,
-        destPath: string,
+    private async downloadModelFile(
         win: BrowserWindow,
-        label: string,
-        phase: 1 | 2 | 3
-    ): Promise<void> {
-        log(`从 HuggingFace 下载 ${label}: ${repo}/${fileName}`)
+        label: 'model' | 'embedding',
+        current: number,
+        total: number
+    ) {
+        // 1. 定义具体的模型文件直链 (以 Qwen3-4B-GGUF 的 Q4_K_M 为例)
+        // const fileUrl = label === 'model'
+        //     ? 'https://modelscope.cn'
+        //     : '你的Embedding模型直链';
 
-        try {
-            const blob = await downloadFile({
-                repo: repo,
-                path: fileName,
-                hubUrl: 'https://hf-mirror.com'  // 使用国内镜像
-            })
+        const fileName = this.MODEL_FILE;
+        const destPath = path.join(this.modelsDir, fileName);
+        const baseUrl = "https://modelscope.cn";
+        const repoPath = `Qwen/Qwen3-4B-GGUF`;
+        const fileUrl = `${baseUrl}/api/v1/models/${repoPath}/repo?Revision=master&FilePath=${fileName}`;
 
-            if (!blob) {
-                throw new Error('下载失败，文件为空')
-            }
+        log(`开始下载文件: ${fileName}`);
 
-            const totalBytes = blob.size
-            log(`${label} 文件大小: ${totalBytes} bytes`)
+        const writer = fs.createWriteStream(destPath);
 
-            // 将 Blob 转换为 Buffer 并写入文件
-            const arrayBuffer = await blob.arrayBuffer()
-            const buffer = Buffer.from(arrayBuffer)
+        const response = await axios({
+            url: fileUrl,
+            method: 'GET',
+            responseType: 'stream',
+            timeout: 0, // 关键：禁用超时
+        });
 
-            // 分块发送进度（简化版，实际进度依赖内存中的完整下载）
-            const chunkSize = Math.max(1, Math.floor(totalBytes / 100))
-            for (let i = 0; i < 100; i++) {
-                if (this.cancellationToken.cancelled) {
-                    throw new Error('Download cancelled')
+        const totalBytes = parseInt(response.headers['content-length'], 10);
+        let downloadedBytes = 0;
+
+        response.data.on('data', (chunk: Buffer) => {
+            downloadedBytes += chunk.length;
+            const percent = Math.round((downloadedBytes / totalBytes) * 100);
+
+            // 发送进度到渲染进程
+            win.webContents.send('server:download-progress', {
+                percent,
+                speed: '', // 可以根据时间计算下载速度
+                phase: label,
+                fileName,
+                current,
+                total
+            });
+        });
+
+        response.data.pipe(writer);
+
+        return new Promise((resolve, reject) => {
+            writer.on('finish', () => {
+                log(`${label} 下载完成`);
+                resolve(true);
+            });
+            writer.on('error', (err) => {
+                log(`${label} 下载失败: ${err.message}`);
+                reject(err);
+            });
+        });
+    }
+
+    private async cloneWithProgress(
+        win: BrowserWindow,
+        label: 'model' | 'embedding',
+        current: number,
+        total: number
+    ) {
+        // 根据 label 选择对应的仓库 URL
+        const repoUrl = label === 'model'
+            ? 'https://www.modelscope.cn/Qwen/Qwen3-4B-GGUF.git'
+            : 'https://huggingface.co/CompendiumLabs/bge-small-zh-v1.5-gguf'
+
+        const fileName = label === 'model' ? this.MODEL_FILE : this.EMBEDDING_FILE
+
+        log(`开始下载 ${label}: ${repoUrl}`)
+
+        await git.clone({
+            fs,
+            http,
+            dir: this.modelsDir,
+            url: repoUrl,
+            onProgress: (progress) => {
+                let percent = 0
+                if (progress.total) {
+                    percent = Math.round((progress.loaded / progress.total) * 100)
                 }
-                const progress = Math.min((i + 1) * chunkSize, totalBytes)
-                const percent = Math.round((progress / totalBytes) * 100)
+
                 win.webContents.send('server:download-progress', {
                     percent,
-                    speed: `${(progress / 1024 / 1024).toFixed(1)} MB`,
-                    phase: {1: 'llama-server', 2: 'model', 3: 'embedding'}[phase] as string,
+                    speed: '',
+                    phase: label,
                     fileName,
-                    current: phase,
-                    total: 3
+                    current,
+                    total
                 })
             }
-
-            writeFileSync(destPath, buffer)
-            log(`${label} 下载完成: ${destPath}`)
-        } catch (err) {
-            log(`${label} 下载失败: ${err}`)
-            throw err
-        }
-    }
-
-    /**
-     * HTTP 下载文件（用于 llama-server）
-     * 支持重定向，自动选择 http/https 模块
-     */
-    private async downloadFileHttp(
-        url: string,
-        destPath: string,
-        win: BrowserWindow,
-        label: string,
-        phase: 1 | 2 | 3
-    ): Promise<void> {
-        log(`开始下载 ${label}: ${url}`)
-
-        return new Promise((resolve, reject) => {
-            if (this.cancellationToken.cancelled) {
-                reject(new Error('Download cancelled'))
-                return
-            }
-
-            const mod = url.startsWith('https') ? https : http
-            const file = createWriteStream(destPath)
-
-            const req = mod.get(url, (res) => {
-                log(`${label} 响应状态: ${res.statusCode}`)
-                // 处理重定向
-                if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                    log(`${label} 重定向到: ${res.headers.location}`)
-                    mod.get(res.headers.location, (res2) => {
-                        this.doDownload(res2, file, win, label, phase, destPath.split(/[/\\]/).pop() || '')
-                            .then(resolve).catch(reject)
-                    }).on('error', reject)
-                    return
-                }
-                this.doDownload(res, file, win, label, phase, destPath.split(/[/\\]/).pop() || '')
-                    .then(resolve).catch(reject)
-            }).on('error', (err) => {
-                log(`${label} 下载错误: ${err.message}`)
-                reject(err)
-            })
-
-            // 30 秒连接超时
-            req.setTimeout(30000, () => {
-                log(`${label} 连接超时`)
-                req.destroy()
-                reject(new Error(`${label} 连接超时，请检查网络`))
-            })
         })
-    }
 
-    /** 执行实际下载，实时更新进度 */
-    private async doDownload(
-        res: http.IncomingMessage,
-        file: ReturnType<typeof createWriteStream>,
-        win: BrowserWindow,
-        label: string,
-        phase: 1 | 2 | 3,
-        fileName: string
-    ): Promise<void> {
-        return new Promise((resolve, reject) => {
-            let downloadedBytes = 0
-            const totalBytes = parseInt(res.headers['content-length'] ?? '0', 10) || 100_000_000
-            const phaseNames = {1: 'llama-server', 2: 'model', 3: 'embedding'} as const
-
-            res.on('data', (chunk: Buffer) => {
-                if (this.cancellationToken.cancelled) {
-                    file.destroy()
-                    reject(new Error('Download cancelled'))
-                    return
-                }
-                downloadedBytes += chunk.length
-                file.write(chunk)
-                const percent = Math.round((downloadedBytes / totalBytes) * 100)
-                win.webContents.send('server:download-progress', {
-                    percent, speed: this.formatSpeed(downloadedBytes, Date.now()),
-                    phase: phaseNames[phase], fileName, current: phase, total: 3
-                })
-            })
-
-            res.on('end', () => {
-                file.end()
-                log(`${label} 下载完成`)
-                resolve()
-            })
-
-            res.on('error', (err) => {
-                file.destroy()
-                reject(err)
-            })
-        })
+        log(`${label} 下载完成`)
     }
 
     /** 格式化下载速度 */
-    private formatSpeed(bytes: number, startTime: number): string {
-        const elapsed = (Date.now() - startTime) / 1000
-        if (elapsed < 1) return '0 MB/s'
-        const speed = bytes / elapsed / (1024 * 1024)
-        return `${speed.toFixed(1)} MB/s`
-    }
-
-    /**
-     * 调用 llama-server 生成文本（非流式）
-     * POST /completion { prompt: string }
-     */
-    async generate(prompt: string): Promise<string> {
-        return new Promise((resolve, reject) => {
-            const body = JSON.stringify({
-                prompt,
-                temperature: 0.3,      // 降低随机性
-                max_tokens: 1024,       // 限制最大 token 数
-                stop: ['---', 'User question:', '\n\n\n']  // 停止序列
-            })
-            const req = http.request(
-                {
-                    hostname: 'localhost',
-                    port: this.port,
-                    path: '/completion',
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Content-Length': Buffer.byteLength(body)
-                    }
-                },
-                (res) => {
-                    let data = ''
-                    res.on('data', (chunk) => (data += chunk))
-                    res.on('end', () => {
-                        try {
-                            const parsed = JSON.parse(data)
-                            resolve(parsed.content ?? data)
-                        } catch {
-                            resolve(data)
-                        }
-                    })
-                }
-            )
-            req.on('error', reject)
-            req.write(body)
-            req.end()
-        })
-    }
-
-    /**
-     * 调用 llama-server 生成文本（流式）
-     * POST /completion { prompt: string, stream: true }
-     * 返回 Node.js Readable 流
-     */
-    // async generateStream(prompt: string): Promise<import('stream').Readable> {
-    //     const response = await fetch(`http://localhost:${this.port}/completion`, {
-    //         method: 'POST',
-    //         headers: {'Content-Type': 'application/json'},
-    //         body: JSON.stringify({
-    //             prompt,
-    //             stream: true,
-    //             temperature: 0.3,
-    //             max_tokens: 1024,
-    //             stop: ['---', 'User question:', '\n\n\n']
-    //         })
-    //     })
-    //
-    //     if (!response.ok) {
-    //         throw new Error(`HTTP ${response.status}`)
-    //     }
-    //
-    //     const reader = response.body?.getReader()
-    //     if (!reader) throw new Error('Failed to read response stream')
-    //
-    //     const {Readable} = await import('stream')
-    //     // 将 Web ReadableStream 转换为 Node.js Readable
-    //     return Readable.from(async function* () {
-    //         const decoder = new TextDecoder()
-    //         while (true) {
-    //             const {done, value} = await reader.read()
-    //             if (done) break
-    //             yield decoder.decode(value)
-    //         }
-    //     }())
-    // }
-
-    /**
-     * 调用 llama-server 生成文本嵌入向量
-     * POST /embedding { content: string }
-     * 返回归一化的 float32 向量数组
-     */
-    // async embed(text: string): Promise<number[]> {
-    //     return new Promise((resolve, reject) => {
-    //         const body = JSON.stringify({input: text})
-    //         const req = http.request(
-    //             {
-    //                 host: '127.0.0.1',
-    //                 port: this.port,
-    //                 path: '/embedding',
-    //                 method: 'POST',
-    //                 headers: {
-    //                     'Content-Type': 'application/json',
-    //                     'Content-Length': Buffer.byteLength(body)
-    //                 }
-    //             },
-    //             (res) => {
-    //                 let data = ''
-    //                 res.on('data', (chunk) => (data += chunk))
-    //                 res.on('end', () => {
-    //                     try {
-    //                         const parsed = JSON.parse(data)
-    //                         log(`Embedding 响应: ${JSON.stringify(parsed).substring(0, 200)}`)
-    //                         // llama-server 返回格式: [{"index":0,"embedding":[[...],...]}] 或 {"embedding": [...]}
-    //                         let embedding: number[]
-    //                         if (Array.isArray(parsed)) {
-    //                             // 数组格式: [{"embedding": [[...]]}]
-    //                             const emb = parsed[0]?.embedding
-    //                             embedding = Array.isArray(emb) ? (Array.isArray(emb[0]) ? emb[0] : emb) : []
-    //                         } else {
-    //                             // 对象格式: {"embedding": [...]}
-    //                             embedding = parsed.embedding || []
-    //                         }
-    //                         log(`Embedding 向量维度: ${embedding.length}`)
-    //                         // 归一化向量（L2 norm）
-    //                         const norm = Math.sqrt(embedding.reduce((sum: number, v: number) => sum + v * v, 0))
-    //                         const normalized = norm > 0 ? embedding.map((v: number) => v / norm) : embedding
-    //                         resolve(normalized)
-    //                     } catch {
-    //                         reject(new Error(`Embedding parse error: ${data}`))
-    //                     }
-    //                 })
-    //             }
-    //         )
-    //         req.on('error', reject)
-    //         req.write(body)
-    //         req.end()
-    //     })
+    // private formatSpeed(bytes: number, startTime: number): string {
+    //     const elapsed = (Date.now() - startTime) / 1000
+    //     if (elapsed < 1) return '0 MB/s'
+    //     const speed = bytes / elapsed / (1024 * 1024)
+    //     return `${speed.toFixed(1)} MB/s`
     // }
 
     /**
@@ -673,7 +463,7 @@ export class ServerManager {
         return new Promise((resolve, reject) => {
             const start = Date.now()
             const check = (): void => {
-                const req = http.get(`http://localhost:${port}`, () => {
+                const req = nodeHttp.get(`http://localhost:${port}`, () => {
                     resolve()
                 })
                 req.on('error', () => {

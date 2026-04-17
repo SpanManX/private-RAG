@@ -7,8 +7,8 @@ documentStore.refreshDocuments()
 
 const serverStatus = ref<'idle' | 'starting' | 'running' | 'error'>('idle')
 const statusMessage = ref('')
-const gpuAvailable = ref(false)
-const downloadProgress = ref({ percent: 0, speed: '', phase: '', fileName: '', current: 0, total: 3 })
+// const gpuAvailable = ref(false)
+const downloadProgress = ref({ percent: 0, speed: '', phase: '', fileName: '', current: 0, total: 2 })
 const isDownloading = ref(false)
 const errorMessage = ref('')
 const showError = ref(false)
@@ -40,7 +40,7 @@ async function checkServerStatus() {
   const status = await window.api.server.status()
   serverStatus.value = status.state === 'running' ? 'running' : (status.state === 'error' ? 'error' : 'idle')
   statusMessage.value = status.message
-  gpuAvailable.value = status.gpuAvailable ?? false
+  // gpuAvailable.value = status.gpuAvailable ?? false
 }
 
 async function startServer() {
@@ -65,7 +65,7 @@ async function stopServer() {
 async function downloadModel() {
   clearError()
   isDownloading.value = true
-  downloadProgress.value = { percent: 0, speed: '', phase: 'llama-server', fileName: 'llama-server.exe', current: 1, total: 3 }
+  downloadProgress.value = { percent: 0, speed: '', phase: 'model', fileName: 'Qwen3-4B-Q5_K_M.gguf', current: 1, total: 2 }
   statusMessage.value = '正在下载模型...'
 
   window.api.server.onDownloadProgress((progress) => {
@@ -156,9 +156,9 @@ function getStatusLabel(): string {
         <div class="status-row">
           <span class="label">状态:</span>
           <span class="status-badge" :class="serverStatus">{{ getStatusLabel() }}</span>
-          <span class="gpu-badge" :class="gpuAvailable ? 'gpu-ok' : 'gpu-none'">
-            GPU: {{ gpuAvailable ? '可用' : '不可用' }}
-          </span>
+<!--          <span class="gpu-badge" :class="gpuAvailable ? 'gpu-ok' : 'gpu-none'">-->
+<!--            GPU: {{ gpuAvailable ? '可用' : '不可用' }}-->
+<!--          </span>-->
         </div>
         <div class="status-row">
           <span class="label">信息:</span>
@@ -257,7 +257,7 @@ function getStatusLabel(): string {
   </div>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
 .settings {
   flex: 1;
   overflow-y: auto;
@@ -405,20 +405,20 @@ function getStatusLabel(): string {
 }
 
 /* 新增 GPU 徽章 */
-.gpu-badge {
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  margin-left: auto;
-}
-.gpu-badge.gpu-ok {
-  background: #d1fae5;
-  color: #059669;
-}
-.gpu-badge.gpu-none {
-  background: #f3f4f6;
-  color: #6b7280;
-}
+//.gpu-badge {
+//  font-size: 12px;
+//  padding: 2px 8px;
+//  border-radius: 4px;
+//  margin-left: auto;
+//}
+//.gpu-badge.gpu-ok {
+//  background: #d1fae5;
+//  color: #059669;
+//}
+//.gpu-badge.gpu-none {
+//  background: #f3f4f6;
+//  color: #6b7280;
+//}
 
 /* 新增下载样式 */
 .download-file {
