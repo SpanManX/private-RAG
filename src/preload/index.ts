@@ -50,7 +50,18 @@ const api = {
         /** 获取文档列表 */
         list: () => ipcRenderer.invoke('document:list'),
         /** 删除文档 */
-        delete: (docId: string) => ipcRenderer.invoke('document:delete', docId)
+        delete: (docId: string) => ipcRenderer.invoke('document:delete', docId),
+        /** 监听导入进度（流式事件） */
+        onImportProgress: (callback: (progress: {
+            phase: 'parsing' | 'vectorizing' | 'done' | 'idle'
+            fileName: string
+            fileIndex: number
+            fileTotal: number
+            chunkIndex: number
+            chunkTotal: number
+            percent: number
+        }) => void) =>
+            ipcRenderer.on('document:import-progress', (_event, progress) => callback(progress))
     },
 
     // -------- RAG 问答 --------

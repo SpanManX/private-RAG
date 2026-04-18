@@ -41,7 +41,7 @@ const CHUNK_SIZE = 512
  * Embedding 向量维度（BGE-small-zh-v1.5 = 384 维）
  * Qwen3-1.7B 的 Embedding 维度是 2048
  **/
-const EMBEDDING_DIM = 2048
+const EMBEDDING_DIM = 2560
 // const EMBEDDING_DIM = 384
 
 export class IndexManager {
@@ -145,7 +145,7 @@ export class IndexManager {
      * - 将段落合并成约 512 字符的块
      * - 过滤掉太短的块（< 10 字符）
      */
-    private chunkText(text: string): string[] {
+    chunkText(text: string): string[] {
         const chunks: string[] = []
 
         // 按换行分割段落
@@ -218,6 +218,68 @@ export class IndexManager {
         await this.table.add(records)
 
         // 更新内存缓存
+        this.docs.set(docId, {
+            id: docId,
+            fileName,
+            createdAt: Date.now(),
+            textLength: text.length
+        })
+
+        log(`文档已索引: ${fileName}, ${chunks.length} 个块`)
+        return docId
+    }
+
+    /**
+     * 向量化文档（带进度回调）
+     * @param filePath 原始文件路径
+     * @param text 解析后的纯文本
+     * @param chunks 预分块的文本数组
+     * @param onChunkProgress 每处理完一个 chunk 调用的回调，参数为 chunk 索引
+     * @returns 生成的文档 ID
+     */
+    async addDocumentWithProgress(
+        filePath: string,
+        text: string,
+        chunks: string[],
+        onChunkProgress: (chunkIndex: number) => void
+    ): Promise<string> {
+        const docId = randomUUID()
+        const fileName = filePath.split(/[/\\]/).pop() ?? filePath
+
+        type ChunkRecord = {
+            id: string
+            docId: string
+            fileName: string
+            chunkIndex: number
+            chunkText: string
+            vector: number[]
+        }
+        const records: ChunkRecord[] = []
+
+        for (let i = 0; i < chunks.length; i++) {
+            const chunkText = chunks[i]
+            let embedding: number[]
+            try {
+                embedding = await this.embeddings.embedQuery(chunkText)
+            } catch (err) {
+                log(`Embedding 错误: ${err}，使用零向量`)
+                embedding = Array(EMBEDDING_DIM).fill(0)
+            }
+
+            records.push({
+                id: randomUUID(),
+                docId,
+                fileName,
+                chunkIndex: i,
+                chunkText,
+                vector: embedding
+            })
+
+            onChunkProgress(i)
+        }
+
+        await this.table.add(records)
+
         this.docs.set(docId, {
             id: docId,
             fileName,

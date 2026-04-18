@@ -20,6 +20,17 @@ export interface DocumentRecord {
     createdAt: number   // 创建时间戳
 }
 
+/** 导入进度结构 */
+export interface ImportProgress {
+    phase: 'parsing' | 'vectorizing' | 'done' | 'idle'
+    fileName: string
+    fileIndex: number
+    fileTotal: number
+    chunkIndex: number
+    chunkTotal: number
+    percent: number
+}
+
 /**
  * 文档状态管理
  * 使用 Pinia Composition API 风格定义
@@ -30,6 +41,37 @@ export const useDocumentStore = defineStore('document', () => {
     const documents = ref<DocumentRecord[]>([])
     /** 是否正在导入文档 */
     const isImporting = ref(false)
+    /** 服务是否运行中 */
+    const isServerRunning = ref(false)
+    /** 导入进度 */
+    const importProgress = ref<ImportProgress>({
+        phase: 'idle',
+        fileName: '',
+        fileIndex: 0,
+        fileTotal: 0,
+        chunkIndex: 0,
+        chunkTotal: 0,
+        percent: 0
+    })
+
+    let serverPollInterval: ReturnType<typeof setInterval> | null = null
+
+    async function fetchServerStatus(): Promise<void> {
+        const status = await window.api.server.status()
+        isServerRunning.value = status.state === 'running'
+    }
+
+    function startServerPoll(): void {
+        fetchServerStatus()
+        serverPollInterval = setInterval(fetchServerStatus, 3000)
+    }
+
+    function stopServerPoll(): void {
+        if (serverPollInterval) {
+            clearInterval(serverPollInterval)
+            serverPollInterval = null
+        }
+    }
 
     // ===== 操作 =====
 
@@ -71,16 +113,36 @@ export const useDocumentStore = defineStore('document', () => {
      */
     async function importBatch(filePaths: string[]): Promise<void> {
         isImporting.value = true
-        try {
-            const fileData: {
-                filePath: string;
-                success: boolean;
-                docId?: string;
-                error?: string
-            }[] = await window.api.document.importBatch(filePaths)
-            console.log(fileData,'importBatch')
-            await refreshDocuments()
-        } finally {
+        importProgress.value = {
+            phase: 'parsing',
+            fileName: '',
+            fileIndex: 0,
+            fileTotal: filePaths.length,
+            chunkIndex: 0,
+            chunkTotal: 0,
+            percent: 0
+        }
+
+        // 订阅主进程推送的进度事件
+        window.api.document.onImportProgress((progress) => {
+            importProgress.value = progress
+            if (progress.phase === 'done') {
+                isImporting.value = false
+                // 2秒后恢复idle
+                setTimeout(() => {
+                    importProgress.value = {
+                        phase: 'idle', fileName: '', fileIndex: 0,
+                        fileTotal: 0, chunkIndex: 0, chunkTotal: 0, percent: 0
+                    }
+                }, 2000)
+            }
+        })
+
+        const results = await window.api.document.importBatch(filePaths)
+        console.log('importBatch 结果:', results)
+        await refreshDocuments()
+        // 如果主进程还未发送 done 事件，手动结束
+        if (isImporting.value) {
             isImporting.value = false
         }
     }
@@ -101,6 +163,10 @@ export const useDocumentStore = defineStore('document', () => {
     return {
         documents,
         isImporting,
+        isServerRunning,
+        importProgress,
+        startServerPoll,
+        stopServerPoll,
         refreshDocuments,
         importFile,
         importBatch,

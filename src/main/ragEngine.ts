@@ -37,7 +37,7 @@ export class RagEngine {
      * - 如果文档不相关则如实说明
      * - 要求引用文档来源
      */
-    private queryTemplate: string = `参考文档：
+    private queryTemplate: string = `[参考文档]：
 {context}
 
 问题：{question}`
@@ -49,7 +49,7 @@ export class RagEngine {
         你是一个文档助手。请根据提供的 [参考文档] 回答问题。
         
         # 约束规则
-        1. 如果 [参考文档] 中没有包含问题的答案，请回复：“抱歉，在现有文件中未找到相关内容。”，然后必须根据你的通用知识库，对用户提到的关键词进行科普或回答。
+        1. 如果 [参考文档] 中没有包含问题的答案，请先回复：“抱歉，在现有文件中未找到相关内容。”，然后必须根据你的通用知识库，对用户提到的关键词进行科普或回答。
         2. 如果 [参考文档] 包含答案，请严格根据文档进行总结，不要胡言乱语。
         3. 如果 [参考文档] 包含答案，请在回答的最后引用相关文件。`
     }
@@ -114,10 +114,14 @@ export class RagEngine {
      * @returns 包含上下文的 prompt
      */
     async buildPrompt(question: string): Promise<{ prompt: string; citations: RagChunk['citations'] }> {
-        const searchResults = await this.indexManager.search(question, 5)
+        const searchResults = await this.indexManager.search(question, 5) // 检索相关文档块
 
+        // 没有相关文档
         if (searchResults.length === 0) {
-            return {prompt: question, citations: []}
+            const prompt = this.queryTemplate
+                .replace('{context}', '')
+                .replace('{question}', question)
+            return {prompt, citations: []}
         }
 
         const context = searchResults

@@ -132,23 +132,65 @@ function registerIpcHandlers(): void {
         }
     })
 
-    // 批量导入文档
+    // 批量导入文档（带流式进度）
     ipcMain.handle('document:import-batch', async (_event, filePaths: string[]) => {
-        console.log('执行：import-batch', filePaths)
-        const results: any = []
-        for (const filePath of filePaths) {
-            try {
-                const text = await documentProcessor.parse(filePath)
-                console.log('解析完成, 开始添加到 LanceDB')
-                const docId = await indexManager.addDocument(filePath, text)
-                console.log('添加成功, docId:', docId)
-                results.push({filePath, success: true, docId})
-            } catch (error) {
-                console.error('单个文件导入失败:', error)  // 关键：看这里
-                results.push({filePath, success: false, error: String(error)})
-            }
+        const win = BrowserWindow.getAllWindows()[0]
+        if (!win) return []
+
+        // ===== 阶段一：解析所有文件，统计总 chunk 数 =====
+        const parsedFiles: { filePath: string; text: string; chunks: string[] }[] = []
+        for (let i = 0; i < filePaths.length; i++) {
+            const filePath = filePaths[i]
+            const text = await documentProcessor.parse(filePath)
+            const chunks = indexManager.chunkText(text)
+            parsedFiles.push({ filePath, text, chunks })
+
+            win.webContents.send('document:import-progress', {
+                phase: 'parsing',
+                fileName: filePath.split(/[/\\]/).pop() ?? filePath,
+                fileIndex: i + 1,
+                fileTotal: filePaths.length,
+                chunkIndex: 0,
+                chunkTotal: 0,
+                percent: Math.round(((i + 1) / filePaths.length) * 50)
+            })
         }
-        console.log('返回结果:', results)
+
+        // ===== 阶段二：向量化所有 chunk =====
+        const results: any = []
+        let globalChunkIndex = 0
+        const totalChunks = parsedFiles.reduce((sum, f) => sum + f.chunks.length, 0)
+
+        for (let i = 0; i < parsedFiles.length; i++) {
+            const { filePath, text, chunks } = parsedFiles[i]
+            const docId = await indexManager.addDocumentWithProgress(
+                filePath, text, chunks,
+                () => {
+                    globalChunkIndex++
+                    win.webContents.send('document:import-progress', {
+                        phase: 'vectorizing',
+                        fileName: filePath.split(/[/\\]/).pop() ?? filePath,
+                        fileIndex: i + 1,
+                        fileTotal: filePaths.length,
+                        chunkIndex: globalChunkIndex,
+                        chunkTotal: totalChunks,
+                        percent: 50 + Math.round((globalChunkIndex / totalChunks) * 50)
+                    })
+                }
+            )
+            results.push({ filePath, success: true, docId })
+        }
+
+        win.webContents.send('document:import-progress', {
+            phase: 'done',
+            fileName: '',
+            fileIndex: filePaths.length,
+            fileTotal: filePaths.length,
+            chunkIndex: totalChunks,
+            chunkTotal: totalChunks,
+            percent: 100
+        })
+
         return results
     })
 

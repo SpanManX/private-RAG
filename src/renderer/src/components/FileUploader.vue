@@ -7,6 +7,8 @@
  * - 支持拖拽文件到组件上
  * - 自动过滤支持的文档格式（PDF、DOCX、MD、TXT）
  * - 批量导入到文档库
+ * - 显示导入进度（解析 → 向量化）
+ * - 大模型未启动时给出提示
  *
  * 支持的文件格式：
  * - .pdf - PDF 文档
@@ -15,7 +17,7 @@
  * - .txt - 纯文本文件
  */
 
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useDocumentStore } from '@/stores/documentStore'
 
 // 定义组件发出的事件
@@ -30,11 +32,27 @@ const documentStore = useDocumentStore()
 /** 是否正在拖拽文件（用于样式切换） */
 const isDragging = ref(false)
 
+/** 服务未启动提示 */
+const serverOfflineTip = ref(false)
+
+onMounted(() => {
+  documentStore.startServerPoll()
+})
+
+onUnmounted(() => {
+  documentStore.stopServerPoll()
+})
+
 /**
  * 处理点击选择文件
  * 打开系统文件对话框，选择后批量导入
  */
 async function handleFileDialog(): Promise<void> {
+  if (!documentStore.isServerRunning) {
+    serverOfflineTip.value = true
+    setTimeout(() => { serverOfflineTip.value = false }, 3000)
+    return
+  }
   const filePaths = await window.api.dialog.openFile()
   if (filePaths.length > 0) {
     await documentStore.importBatch(filePaths)
@@ -50,13 +68,18 @@ async function handleFileDialog(): Promise<void> {
  */
 function handleDrop(event: DragEvent): void {
   isDragging.value = false
+  if (!documentStore.isServerRunning) {
+    serverOfflineTip.value = true
+    setTimeout(() => { serverOfflineTip.value = false }, 3000)
+    return
+  }
   const files = event.dataTransfer?.files
   if (!files) return
 
   // 提取文件路径，并过滤支持的文件格式
   const paths = Array.from(files)
     .filter((f) => /\.(pdf|docx?|md|txt)$/i.test(f.name))  // 只保留支持的格式
-    .map((f) => f.path)  // 获取文件完整路径
+    .map((f) => (f as any).path)  // 获取文件完整路径
 
   if (paths.length > 0) {
     documentStore.importBatch(paths)
@@ -66,14 +89,38 @@ function handleDrop(event: DragEvent): void {
 </script>
 
 <template>
-  <!--
-    文件上传区域
-    - 点击：打开文件对话框
-    - dragover：拖拽进入时触发
-    - dragleave：拖拽离开时触发
-    - drop：拖拽放下时触发
-  -->
+  <!-- 进度显示状态 -->
+  <div v-if="documentStore.importProgress.phase !== 'idle'" class="file-uploader progress-panel">
+    <div class="progress-phase1">
+      <span class="phase-label">阶段一：解析文档</span>
+      <div class="progress-bar">
+        <div class="progress-fill" :style="{ width: Math.min(documentStore.importProgress.percent, 50) + '%' }"></div>
+      </div>
+      <span class="phase-percent">{{ Math.min(documentStore.importProgress.percent, 50) }}%</span>
+    </div>
+    <div class="progress-phase2" v-if="documentStore.importProgress.phase === 'vectorizing' || documentStore.importProgress.phase === 'done'">
+      <span class="phase-label">阶段二：生成向量</span>
+      <div class="progress-bar">
+        <div class="progress-fill progress-fill-green" :style="{ width: Math.max(0, documentStore.importProgress.percent - 50) + '%' }"></div>
+      </div>
+      <span class="phase-percent">{{ Math.max(0, documentStore.importProgress.percent - 50) }}%</span>
+    </div>
+    <div class="progress-done" v-if="documentStore.importProgress.phase === 'done'">
+      导入完成，{{ documentStore.importProgress.fileTotal }} 个文档已就绪
+    </div>
+    <div class="progress-file" v-else>
+      {{ documentStore.importProgress.fileName }} ({{ documentStore.importProgress.fileIndex }}/{{ documentStore.importProgress.fileTotal }})
+    </div>
+  </div>
+
+  <!-- 服务未启动提示 -->
+  <div v-else-if="serverOfflineTip" class="file-uploader offline-tip" @click="serverOfflineTip = false">
+    <span>请先启动模型服务</span>
+  </div>
+
+  <!-- 默认上传区域 -->
   <div
+    v-else
     class="file-uploader"
     :class="{ dragging: isDragging }"
     @click="handleFileDialog"
@@ -92,32 +139,32 @@ function handleDrop(event: DragEvent): void {
 </template>
 
 <style scoped>
-/* 文件上传区域基础样式 */
+/* 基础上传区域样式 */
 .file-uploader {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 10px;
-  border: 1.5px dashed #d1d5db;  /* 虚线边框 */
+  border: 1.5px dashed #d1d5db;
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s;           /* 过渡动画 */
+  transition: all 0.2s;
   margin: 8px 12px;
 }
 
-/* 悬停状态：边框变蓝，背景变浅蓝 */
+/* 悬停状态 */
 .file-uploader:hover {
   border-color: #3b82f6;
   background: #eff6ff;
 }
 
-/* 拖拽状态：边框变蓝，背景更深的蓝 */
+/* 拖拽状态 */
 .file-uploader.dragging {
   border-color: #3b82f6;
   background: #dbeafe;
 }
 
-/* 上传内容：图标 + 文字水平排列 */
+/* 上传内容 */
 .upload-content {
   display: flex;
   align-items: center;
@@ -126,15 +173,81 @@ function handleDrop(event: DragEvent): void {
   color: #6b7280;
 }
 
-/* 上传图标 */
 .upload-icon {
   font-size: 16px;
   font-weight: 600;
   color: #3b82f6;
 }
 
-/* 上传文字 */
 .upload-text {
   color: #6b7280;
+}
+
+/* 进度面板 */
+.progress-panel {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 16px;
+}
+
+.progress-phase1, .progress-phase2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.phase-label {
+  font-size: 12px;
+  color: #6b7280;
+  min-width: 100px;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 6px;
+  background: #e5e7eb;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #3b82f6;
+  transition: width 0.3s ease;
+  border-radius: 3px;
+}
+
+.progress-fill-green {
+  background: #10b981;
+}
+
+.phase-percent {
+  font-size: 12px;
+  color: #374151;
+  min-width: 32px;
+  text-align: right;
+}
+
+.progress-file {
+  font-size: 12px;
+  color: #9ca3af;
+  text-align: center;
+}
+
+.progress-done {
+  font-size: 13px;
+  color: #059669;
+  text-align: center;
+  font-weight: 500;
+}
+
+/* 服务未启动提示 */
+.offline-tip {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 13px;
+  cursor: pointer;
 }
 </style>

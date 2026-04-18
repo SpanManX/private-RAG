@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, onUnmounted, computed } from 'vue'
+import { onMounted, ref, onUnmounted } from 'vue'
 import { useDocumentStore } from '@/stores/documentStore'
 
 const documentStore = useDocumentStore()
@@ -121,9 +121,6 @@ function clearError() {
   errorMessage.value = ''
   showError.value = false
 }
-
-const canStart = computed(() => serverStatus.value === 'idle' || serverStatus.value === 'error')
-const canDownload = computed(() => !isDownloading.value && serverStatus.value !== 'starting')
 
 function getStatusLabel(): string {
   switch (serverStatus.value) {

@@ -1,6 +1,7 @@
 node_modules
 dist
 out
+llama-server
 .idea
 .*
 .DS_Store

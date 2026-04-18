@@ -1,19 +1,33 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { useChatStore } from '@/stores/chatStore'
+import { useDocumentStore } from '@/stores/documentStore'
 import MessageBubble from './MessageBubble.vue'
 
 const chatStore = useChatStore()
+const documentStore = useDocumentStore()
 const inputText = ref('')
 const chatContainer = ref<HTMLElement | null>(null)
+const showOfflineTip = ref(false)
 
 onMounted(() => {
+  documentStore.startServerPoll()
   scrollToBottom()
+})
+
+onUnmounted(() => {
+  documentStore.stopServerPoll()
 })
 
 async function handleSend(): Promise<void> {
   const text = inputText.value.trim()
   if (!text || chatStore.isGenerating) return
+
+  if (!documentStore.isServerRunning) {
+    showOfflineTip.value = true
+    setTimeout(() => { showOfflineTip.value = false }, 3000)
+    return
+  }
 
   inputText.value = ''
   await chatStore.sendMessage(text)
@@ -53,6 +67,11 @@ function handleKeydown(e: KeyboardEvent): void {
         :key="msg.id"
         :message="msg"
       />
+    </div>
+
+    <!-- 服务未启动提示条 -->
+    <div v-if="showOfflineTip" class="offline-tip-bar">
+      服务未启动，无法发送消息
     </div>
 
     <!-- 输入区 -->
@@ -126,9 +145,15 @@ function handleKeydown(e: KeyboardEvent): void {
   flex: 1;
   overflow-y: auto;
   padding: 20px;
-  //display: flex;
-  //flex-direction: column;
-  //gap: 16px;
+}
+
+.offline-tip-bar {
+  padding: 8px 20px;
+  background: #f3f4f6;
+  color: #6b7280;
+  font-size: 13px;
+  text-align: center;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .input-area {
@@ -150,7 +175,6 @@ function handleKeydown(e: KeyboardEvent): void {
   outline: none;
   background: white;
   transition: border-color 0.15s;
-  //min-height: 42px;
   max-height: 120px;
 }
 

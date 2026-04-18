@@ -1,16 +1,13 @@
 <script setup lang="ts">
 import {ref, onMounted, onUnmounted} from 'vue'
-import {useRouter, useRoute} from 'vue-router'
+import {useRoute} from 'vue-router'
 import DocList from './DocList.vue'
 import FileUploader from './FileUploader.vue'
 
-const router = useRouter()
 const route = useRoute()
-
 const serverStatus = ref<'idle' | 'starting' | 'running' | 'error'>('idle')
 const statusMessage = ref('')
 const gpuAvailable = ref(false)
-const autoStart = ref(false)
 let statusPollInterval: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {

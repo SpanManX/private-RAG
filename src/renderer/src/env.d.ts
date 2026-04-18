@@ -44,6 +44,15 @@ interface Window {
             }[]>
             list: () => Promise<Array<{ id: string; fileName: string; createdAt: number; textLength?: number }>>
             delete: (docId: string) => Promise<void>
+            onImportProgress: (callback: (progress: {
+                phase: 'parsing' | 'vectorizing' | 'done' | 'idle'
+                fileName: string
+                fileIndex: number
+                fileTotal: number
+                chunkIndex: number
+                chunkTotal: number
+                percent: number
+            }) => void) => void
         }
         rag: {
             query: (question: string) => Promise<{

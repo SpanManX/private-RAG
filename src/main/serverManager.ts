@@ -15,16 +15,16 @@
 import {spawn, ChildProcess} from 'child_process'
 import {join} from 'path'
 import {existsSync, mkdirSync} from 'fs'
-import {BrowserWindow} from 'electron'
+import {BrowserWindow, app} from 'electron'
 // import http from 'http'
 // import https from 'https'
 // import AdmZip from 'adm-zip'
-import git from 'isomorphic-git'
+// import git from 'isomorphic-git'
 import {log} from './logger'
 import {getModelsDir, setModelsDir} from './store'
 import * as fs from "node:fs";
 import * as nodeHttp from 'http'
-import http from 'isomorphic-git/http/node'
+// import http from 'isomorphic-git/http/node'
 import axios from "axios";
 import path from "node:path";
 
@@ -49,7 +49,7 @@ export class ServerManager {
     private process: ChildProcess | null = null
     private port = 8080                       // llama-server HTTP 端口
     private modelPath!: string                 // Qwen 模型路径
-    private _embeddingPath!: string              // Embedding 模型路径（预留）
+    // private _embeddingPath!: string              // Embedding 模型路径（预留）
     private llamaServerPath!: string           // llama-server.exe 路径
     private modelsDir!: string                 // 模型文件目录
     private cancellationToken: { cancelled: boolean } = {cancelled: false}
@@ -66,7 +66,7 @@ export class ServerManager {
     private readonly MODEL_FILE = 'Qwen3-4B-Q5_K_M.gguf'
     // private readonly MODEL_FILE = 'Qwen3-1.7B-Q8_0.gguf'
     // BGE 中文 embedding 模型（用于向量化查询文本和文档）
-    private readonly EMBEDDING_FILE = 'bge-small-zh-v1.5-f16.gguf'
+    // private readonly EMBEDDING_FILE = 'bge-small-zh-v1.5-f16.gguf'
 
     constructor() {
         this.refreshPaths()
@@ -83,16 +83,27 @@ export class ServerManager {
      */
     private refreshPaths(): void {
         this.modelsDir = getModelsDir()
-        const llamaServerDir = join(this.modelsDir, 'llama-server')
 
-        // 查找 llama-server.exe（文件名可能因版本而异）
-        this.llamaServerPath = this.findLlamaServerExe(llamaServerDir)
+        // dev 模式：从项目根目录的 resources 查找
+        const devResourcesDir = join(app.getAppPath(), 'resources', 'llama-server')
+        // 打包后：从 process.resourcesPath 的 build/resources 查找
+        const packedResourcesDir = join(process.resourcesPath!, 'build', 'resources', 'llama-server')
+
+        if (existsSync(devResourcesDir)) {
+            // dev 模式
+            this.llamaServerPath = this.findLlamaServerExe(devResourcesDir) || join(devResourcesDir, 'llama-server.exe')
+            log(`llama-server 路径（dev）: ${this.llamaServerPath}`)
+        } else {
+            // 打包后
+            this.llamaServerPath = this.findLlamaServerExe(packedResourcesDir) || join(packedResourcesDir, 'llama-server.exe')
+            log(`llama-server 路径（prod）: ${this.llamaServerPath}`)
+        }
 
         // 扫描查找 Qwen GGUF 模型文件
         this.modelPath = this.findModelFile('Qwen3', '.gguf') || ''
 
         // 扫描查找 embedding 模型文件
-        this._embeddingPath = this.findEmbeddingFile() || ''
+        // this._embeddingPath = this.findEmbeddingFile() || ''
     }
 
     /**
@@ -123,24 +134,25 @@ export class ServerManager {
     }
 
     /** 扫描查找 embedding 模型文件 */
-    private findEmbeddingFile(): string | null {
-        try {
-            const files = require('fs').readdirSync(this.modelsDir, {withFileTypes: true})
-            for (const dir of files) {
-                if (dir.isDirectory() && dir.name.includes('bge')) {
-                    const subDir = join(this.modelsDir, dir.name)
-                    const subFiles = require('fs').readdirSync(subDir)
-                    const match = subFiles.find((f: string) => f.endsWith('.gguf'))
-                    if (match) return join(subDir, match)
-                }
-            }
-        } catch {
-        }
-        return null
-    }
+    // private findEmbeddingFile(): string | null {
+    //     try {
+    //         const files = require('fs').readdirSync(this.modelsDir, {withFileTypes: true})
+    //         for (const dir of files) {
+    //             if (dir.isDirectory() && dir.name.includes('bge')) {
+    //                 const subDir = join(this.modelsDir, dir.name)
+    //                 const subFiles = require('fs').readdirSync(subDir)
+    //                 const match = subFiles.find((f: string) => f.endsWith('.gguf'))
+    //                 if (match) return join(subDir, match)
+    //             }
+    //         }
+    //     } catch {
+    //     }
+    //     return null
+    // }
 
     /** 查找 llama-server.exe，支持动态文件名 */
     private findLlamaServerExe(dir: string): string {
+        if (!existsSync(dir)) return ''
         try {
             const files = require('fs').readdirSync(dir)
             const exe = files.find((f: string) =>
@@ -241,6 +253,7 @@ export class ServerManager {
 
         // 检查必需文件
         if (!existsSync(this.llamaServerPath)) {
+            console.log('this.llamaServerPath:', this.llamaServerPath)
             throw new Error(`llama-server.exe 未找到，请先从设置页面下载`)
         }
         if (!existsSync(this.modelPath)) {
@@ -264,8 +277,6 @@ export class ServerManager {
             '--embedding',
             '--host', '127.0.0.1'
         ]
-        console.log('llamaServerPath:', this.llamaServerPath)
-        console.log('args:', args)
         // 启动子进程
         this.process = spawn(this.llamaServerPath, args, {
             stdio: ['ignore', 'pipe', 'pipe']
@@ -408,45 +419,45 @@ export class ServerManager {
         });
     }
 
-    private async cloneWithProgress(
-        win: BrowserWindow,
-        label: 'model' | 'embedding',
-        current: number,
-        total: number
-    ) {
-        // 根据 label 选择对应的仓库 URL
-        const repoUrl = label === 'model'
-            ? 'https://www.modelscope.cn/Qwen/Qwen3-4B-GGUF.git'
-            : 'https://huggingface.co/CompendiumLabs/bge-small-zh-v1.5-gguf'
-
-        const fileName = label === 'model' ? this.MODEL_FILE : this.EMBEDDING_FILE
-
-        log(`开始下载 ${label}: ${repoUrl}`)
-
-        await git.clone({
-            fs,
-            http,
-            dir: this.modelsDir,
-            url: repoUrl,
-            onProgress: (progress) => {
-                let percent = 0
-                if (progress.total) {
-                    percent = Math.round((progress.loaded / progress.total) * 100)
-                }
-
-                win.webContents.send('server:download-progress', {
-                    percent,
-                    speed: '',
-                    phase: label,
-                    fileName,
-                    current,
-                    total
-                })
-            }
-        })
-
-        log(`${label} 下载完成`)
-    }
+    // private async cloneWithProgress(
+    //     win: BrowserWindow,
+    //     label: 'model' | 'embedding',
+    //     current: number,
+    //     total: number
+    // ) {
+    //     // 根据 label 选择对应的仓库 URL
+    //     const repoUrl = label === 'model'
+    //         ? 'https://www.modelscope.cn/Qwen/Qwen3-4B-GGUF.git'
+    //         : 'https://huggingface.co/CompendiumLabs/bge-small-zh-v1.5-gguf'
+    //
+    //     const fileName = label === 'model' ? this.MODEL_FILE : this.EMBEDDING_FILE
+    //
+    //     log(`开始下载 ${label}: ${repoUrl}`)
+    //
+    //     await git.clone({
+    //         fs,
+    //         http,
+    //         dir: this.modelsDir,
+    //         url: repoUrl,
+    //         onProgress: (progress) => {
+    //             let percent = 0
+    //             if (progress.total) {
+    //                 percent = Math.round((progress.loaded / progress.total) * 100)
+    //             }
+    //
+    //             win.webContents.send('server:download-progress', {
+    //                 percent,
+    //                 speed: '',
+    //                 phase: label,
+    //                 fileName,
+    //                 current,
+    //                 total
+    //             })
+    //         }
+    //     })
+    //
+    //     log(`${label} 下载完成`)
+    // }
 
     /** 格式化下载速度 */
     // private formatSpeed(bytes: number, startTime: number): string {
