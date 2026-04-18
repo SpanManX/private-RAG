@@ -15,7 +15,7 @@
 import {spawn, ChildProcess} from 'child_process'
 import {join} from 'path'
 import {existsSync, mkdirSync} from 'fs'
-import {BrowserWindow, app} from 'electron'
+import {app, BrowserWindow} from 'electron'
 // import http from 'http'
 // import https from 'https'
 // import AdmZip from 'adm-zip'
@@ -27,6 +27,7 @@ import * as nodeHttp from 'http'
 // import http from 'isomorphic-git/http/node'
 import axios from "axios";
 import path from "node:path";
+import {getCUDAInfo} from "./units/nvidiaUtil";
 
 /** llama-server 服务状态 */
 export interface ServerStatus {
@@ -69,11 +70,11 @@ export class ServerManager {
     // private readonly EMBEDDING_FILE = 'bge-small-zh-v1.5-f16.gguf'
 
     constructor() {
-        this.refreshPaths()
         // 构造函数中检测 GPU，后续启动服务时使用缓存结果
         this.gpuAvailable = this.detectGpu()
         console.log(`GPU 可用性（检测）: ${this.gpuAvailable}`)
         log(`GPU 可用性（缓存）: ${this.gpuAvailable}`)
+        this.refreshPaths()
     }
 
     /**
@@ -81,11 +82,18 @@ export class ServerManager {
      * 自动扫描 modelsDir 及其子目录，查找实际的模型文件
      * 支持用户手动下载的模型（可能位于子目录中）
      */
-    private refreshPaths(): void {
+    async refreshPaths(): Promise<void> {
         this.modelsDir = getModelsDir()
 
+        const gpuInfo = await getCUDAInfo();
+        if (gpuInfo.available) {
+            console.log(`检测到 GPU: ${gpuInfo.model}, CUDA 版本: ${gpuInfo.version}`);
+        } else {
+            console.warn('警告: 未检测到可用 GPU，将回退至 CPU 模式');
+        }
+
         // dev 模式：从项目根目录的 resources 查找
-        const devResourcesDir = join(app.getAppPath(), 'resources', 'llama-server')
+        const devResourcesDir = join(app.getAppPath(), 'resources', 'llama-server-GPU')
         // 打包后：从 process.resourcesPath 的 build/resources 查找
         const packedResourcesDir = join(process.resourcesPath!, 'build', 'resources', 'llama-server')
 
@@ -98,7 +106,6 @@ export class ServerManager {
             this.llamaServerPath = this.findLlamaServerExe(packedResourcesDir) || join(packedResourcesDir, 'llama-server.exe')
             log(`llama-server 路径（prod）: ${this.llamaServerPath}`)
         }
-
         // 扫描查找 Qwen GGUF 模型文件
         this.modelPath = this.findModelFile('Qwen3', '.gguf') || ''
 
@@ -253,13 +260,12 @@ export class ServerManager {
 
         // 检查必需文件
         if (!existsSync(this.llamaServerPath)) {
-            console.log('this.llamaServerPath:', this.llamaServerPath)
             throw new Error(`llama-server.exe 未找到，请先从设置页面下载`)
         }
         if (!existsSync(this.modelPath)) {
             throw new Error(`模型文件未找到，请先从设置页面下载`)
         }
-
+        console.log('this.llamaServerPath:', this.llamaServerPath)
         // 构建 llama-server 参数
         // -m: 模型路径
         // -c: 上下文窗口大小

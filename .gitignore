@@ -2,6 +2,7 @@ node_modules
 dist
 out
 llama-server
+llama-server-GPU
 .idea
 .*
 .DS_Store
