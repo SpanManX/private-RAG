@@ -318,6 +318,7 @@ export class ServerManager {
 
             // ===== 阶段 1: 下载 Qwen3 模型 =====
             if (this.fileExists(this.modelPath, 100_000_000)) {
+                log(`模型文件已存在: ${this.modelPath}`)
                 win.webContents.send('server:download-progress', {
                     percent: 100, speed: '已存在', phase: 'model',
                     fileName: this.MODEL_FILE, current: 1, total: 2
