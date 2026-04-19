@@ -33,14 +33,17 @@ src/
 ### 主进程模块（`src/main/`）
 
 - **index.ts** - 应用入口、窗口创建、注册 IPC 处理器、应用生命周期清理
-- **serverManager.ts** - 管理 llama-server 子进程（GPU/CPU 自适应）、模型下载（ModelScope）、向量检索端点
+- **serverManager.ts** - 管理 llama-server 子进程
+  - chat 服务（8080）：Qwen3-4B 对话生成
+  - embeddingManager：独立管理 embedding 服务（8081），使用 bge-small-zh-v1.5 模型
 - **documentProcessor.ts** - 解析 PDF/DOCX/MD/TXT（pdf-parse、mammoth）
 - **indexManager.ts** - LanceDB 向量数据库操作：分块（512 字符）、向量化、相似性搜索（IVF_PQ 索引）
 - **ragEngine.ts** - RAG 编排：检索 top-K → 构建 prompt → 流式响应
 - **store.ts** - 配置持久化（config.json），管理模型目录路径
 - **logger.ts** - 日志工具，写入 userData/logs/main.log
-- **langchain/embeddings.ts** - LangChain Embeddings 接口封装，调用 llama-server `/embedding` API 并做 L2 归一化
+- **langchain/embeddings.ts** - LangChain Embeddings 接口封装，调用 embedding 服务（8081）`/embedding` API 并做 L2 归一化
 - **units/nvidiaUtil.ts** - CUDA GPU 检测工具
+- **units/embeddingServerManager.ts** - 独立的 embedding llama-server 进程管理（8081 端口）
 
 ### 渲染进程模块（`src/renderer/src/`）
 
@@ -64,13 +67,14 @@ src/
 ## RAG 流程
 
 ```
-导入 → 解析 → 分块（512 字符）→ 向量化（Qwen3 Embedding）→ LanceDB
-查询 → 向量化 → 相似性搜索（top-K=5，距离阈值 < 0.8）→ 构建 prompt → llama-server SSE 流 → 前端渲染
+用户提问 → 调用 embedding 服务（8081）→ 获取向量 → 查询 LanceDB → 拿到 TopK 文档 → 拼接 prompt → 调用 llama-server（8080）→ 返回答案
 ```
 
 流式响应：前端使用 `@microsoft/fetch-event-source` 直连 `http://localhost:8080/v1/chat/completions`，主进程仅负责构建 prompt 和返回引用来源
 
-模型：Qwen3-4B-Q5_K_M.gguf（对话 + 向量化，均通过 llama-server 推理）；向量维度 2560（Qwen3 内置 Embedding）
+模型：
+- 对话服务（8080）：Qwen3-4B-Q5_K_M.gguf
+- Embedding 服务（8081）：bge-small-zh-v1.5（384 维向量）
 
 ## 代码风格
 
