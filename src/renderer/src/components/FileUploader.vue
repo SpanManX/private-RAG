@@ -91,24 +91,16 @@ function handleDrop(event: DragEvent): void {
 <template>
   <!-- 进度显示状态 -->
   <div v-if="documentStore.importProgress.phase !== 'idle'" class="file-uploader progress-panel">
-    <div class="progress-phase1">
-      <span class="phase-label">阶段一：解析文档</span>
-      <div class="progress-bar">
-        <div class="progress-fill" :style="{ width: Math.min(documentStore.importProgress.percent, 50) + '%' }"></div>
-      </div>
-      <span class="phase-percent">{{ Math.min(documentStore.importProgress.percent, 50) }}%</span>
+    <div class="progress-header">
+      <span class="phase-label" v-if="documentStore.importProgress.phase === 'parsing'">正在解析文档...</span>
+      <span class="phase-label" v-else-if="documentStore.importProgress.phase === 'vectorizing'">正在生成向量...</span>
+      <span class="phase-label" v-else>导入完成</span>
+      <span class="phase-percent">{{ documentStore.importProgress.percent }}%</span>
     </div>
-    <div class="progress-phase2" v-if="documentStore.importProgress.phase === 'vectorizing' || documentStore.importProgress.phase === 'done'">
-      <span class="phase-label">阶段二：生成向量</span>
-      <div class="progress-bar">
-        <div class="progress-fill progress-fill-green" :style="{ width: Math.max(0, documentStore.importProgress.percent - 50) + '%' }"></div>
-      </div>
-      <span class="phase-percent">{{ Math.max(0, documentStore.importProgress.percent - 50) }}%</span>
+    <div class="progress-bar">
+      <div class="progress-fill" :style="{ width: documentStore.importProgress.percent + '%' }"></div>
     </div>
-    <div class="progress-done" v-if="documentStore.importProgress.phase === 'done'">
-      导入完成，{{ documentStore.importProgress.fileTotal }} 个文档已就绪
-    </div>
-    <div class="progress-file" v-else>
+    <div class="progress-file">
       {{ documentStore.importProgress.fileName }} ({{ documentStore.importProgress.fileIndex }}/{{ documentStore.importProgress.fileTotal }})
     </div>
   </div>
@@ -191,16 +183,15 @@ function handleDrop(event: DragEvent): void {
   padding: 16px;
 }
 
-.progress-phase1, .progress-phase2 {
+.progress-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
 }
 
 .phase-label {
   font-size: 12px;
   color: #6b7280;
-  min-width: 100px;
 }
 
 .progress-bar {
@@ -218,10 +209,6 @@ function handleDrop(event: DragEvent): void {
   border-radius: 3px;
 }
 
-.progress-fill-green {
-  background: #10b981;
-}
-
 .phase-percent {
   font-size: 12px;
   color: #374151;
@@ -233,13 +220,6 @@ function handleDrop(event: DragEvent): void {
   font-size: 12px;
   color: #9ca3af;
   text-align: center;
-}
-
-.progress-done {
-  font-size: 13px;
-  color: #059669;
-  text-align: center;
-  font-weight: 500;
 }
 
 /* 服务未启动提示 */
