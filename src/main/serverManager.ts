@@ -95,7 +95,9 @@ export class ServerManager {
         // dev 模式：从项目根目录的 resources 查找
         const devResourcesDir = join(app.getAppPath(), 'resources', 'llama-server-GPU')
         // 打包后：从 process.resourcesPath 的 build/resources 查找
-        const packedResourcesDir = join(process.resourcesPath!, 'build', 'resources', 'llama-server')
+        // const packedResourcesDir = join(process.resourcesPath!, 'build', 'resources', 'llama-server')
+        // 打包后（asar + asarUnpack）：解压到 app.asar.unpacked/build/resources/
+        const packedResourcesDir = join(process.resourcesPath!, 'app.asar.unpacked', 'build', 'resources', 'llama-server-GPU')
 
         if (existsSync(devResourcesDir)) {
             // dev 模式
