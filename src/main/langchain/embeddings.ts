@@ -40,7 +40,7 @@ export class LlamaEmbeddings extends Embeddings {
       const req = http.request(
         {
           host: '127.0.0.1',
-          port: 8080,
+          port: 8081,
           path: '/embedding',
           method: 'POST',
           headers: {
