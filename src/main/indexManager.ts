@@ -38,11 +38,10 @@ export interface DocumentRecord {
 /** 每个 chunk 的大小（字符数） */
 const CHUNK_SIZE = 512
 /**
- * Embedding 向量维度（BGE-small-zh-v1.5 = 384 维）
- * Qwen3-1.7B 的 Embedding 维度是 2048
+ * Embedding 向量维度
+ * bge-small-zh-v1.5 = 384 维
  **/
-const EMBEDDING_DIM = 2560
-// const EMBEDDING_DIM = 384
+const EMBEDDING_DIM = 384
 
 export class IndexManager {
     private db!: lancedb.Connection
@@ -93,6 +92,7 @@ export class IndexManager {
             // 表不存在，创建新表
             this.table = await this.db.createEmptyTable('chunks', schema)
             log('LanceDB 表已创建（带向量列）')
+            log(`向量维度: ${EMBEDDING_DIM}（bge-small-zh-v1.5）`)
 
             // 为 vector 列创建 IVF_PQ 索引（用于高效相似性搜索）
             await this.table.createIndex('vector', {
