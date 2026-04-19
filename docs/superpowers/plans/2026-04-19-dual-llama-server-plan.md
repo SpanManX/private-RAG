@@ -14,20 +14,61 @@
 
 | 文件 | 操作 | 职责 |
 |------|------|------|
-| `src/main/serverManager.ts` | 修改 | 添加 `EmbeddingServerManager` 类和 `embeddingManager` 属性 |
+| `src/main/serverManager.ts` | 修改 | 添加 `EmbeddingServerManager` 引用 |
 | `src/main/embeddings.ts` | 修改 | 端口 8080 → 8081 |
-| `src/main/indexManager.ts` | 修改 | 向量维度 2560 → 384 |
-| `src/main/store.ts` | 修改 | 添加 `getEmbeddingModelPath()` |
+| `src/main/indexManager.ts` | 修改 | 向量维度 2560 → 384，添加维度检查 |
 | `src/main/index.ts` | 修改 | 启动/停止逻辑 |
-| `src/main/units/embeddingServerManager.ts` | 新建 | EmbeddingServerManager 类（从 serverManager.ts 抽取） |
+| `src/main/units/embeddingServerManager.ts` | 新建 | EmbeddingServerManager 类 |
+| `src/main/units/llamaServerUtils.ts` | 新建 | 共享工具函数 |
 
 ---
 
-## Task 1: 添加 EmbeddingServerManager 类
+## Task 1: 创建 llamaServerUtils.ts 工具函数
+
+**Files:**
+- Create: `src/main/units/llamaServerUtils.ts`
+
+- [ ] **Step 1: 创建工具函数**
+
+```typescript
+import {join} from 'path'
+import * as fs from 'fs'
+import {existsSync} from 'fs'
+
+/**
+ * 查找 llama-server.exe，支持动态文件名
+ */
+export function findLlamaServerExe(dir: string): string {
+    if (!existsSync(dir)) return ''
+    try {
+        const files = fs.readdirSync(dir)
+        const exe = files.find((f) =>
+            f.startsWith('llama-server') && f.endsWith('.exe'))
+        return exe ? join(dir, exe) : ''
+    } catch {
+        return ''
+    }
+}
+```
+
+> 注意：使用 `import * as fs from 'fs'` 而非 `require('fs')`，保持与项目 ES module 一致。
+
+- [ ] **Step 2: 提交**
+
+```bash
+git add src/main/units/llamaServerUtils.ts
+git commit -m "refactor: 抽取 findLlamaServerExe 为工具函数
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
+```
+
+---
+
+## Task 2: 添加 EmbeddingServerManager 类
 
 **Files:**
 - Create: `src/main/units/embeddingServerManager.ts`
-- Modify: `src/main/serverManager.ts`
+- Modify: `src/main/serverManager.ts`（添加 `embeddingManager` 属性）
 
 - [ ] **Step 1: 创建 embeddingServerManager.ts**
 
@@ -48,6 +89,7 @@ import {log} from '../logger'
 import {getCUDAInfo} from './nvidiaUtil'
 import * as nodeHttp from 'http'
 import {findLlamaServerExe} from './llamaServerUtils'
+import * as fs from 'fs'
 
 /** embedding 服务状态 */
 export interface EmbeddingServerStatus {
@@ -87,6 +129,7 @@ export class EmbeddingServerManager {
 
         // 查找 bge 模型
         this.modelPath = this.findEmbeddingModel()
+        log(`[Embedding] bge 模型路径: ${this.modelPath}`)
     }
 
     private findEmbeddingModel(): string {
@@ -96,8 +139,8 @@ export class EmbeddingServerManager {
 
         try {
             if (!existsSync(modelDir)) return ''
-            const files = require('fs').readdirSync(modelDir)
-            const modelFile = files.find((f: string) => f.endsWith('.gguf'))
+            const files = fs.readdirSync(modelDir)
+            const modelFile = files.find((f) => f.endsWith('.gguf'))
             return modelFile ? join(modelDir, modelFile) : ''
         } catch {
             return ''
@@ -119,20 +162,24 @@ export class EmbeddingServerManager {
         }
 
         if (!existsSync(this.llamaServerPath)) {
-            throw new Error(`[Embedding] llama-server.exe 未找到`)
+            throw new Error(`[Embedding] llama-server.exe 未找到: ${this.llamaServerPath}`)
         }
         if (!existsSync(this.modelPath)) {
-            throw new Error(`[Embedding] bge 模型文件未找到`)
+            throw new Error(`[Embedding] bge 模型文件未找到: ${this.modelPath}`)
         }
 
+        // bge 模型必须使用 --pooling cls，否则向量质量严重下降
         const args = [
             '-m', this.modelPath,
             '-c', '4096',
             '--port', String(this.port),
             '-ngl', this.gpuAvailable ? '99' : '0',
             '--embedding',
+            '--pooling', 'cls',  // bge 必须加此参数
             '--host', '127.0.0.1'
         ]
+
+        log(`[Embedding] 启动参数: ${args.join(' ')}`)
 
         this.process = spawn(this.llamaServerPath, args, {
             stdio: ['ignore', 'pipe', 'pipe']
@@ -150,7 +197,8 @@ export class EmbeddingServerManager {
             this.process = null
         })
 
-        await this.waitForServer(this.port, 60000)
+        // 等待时间增加到 90s，GPU 冷启动可能较慢
+        await this.waitForServer(this.port, 90000)
         log('[Embedding] embedding-server 启动成功，端口 8081')
     }
 
@@ -190,9 +238,11 @@ export class EmbeddingServerManager {
 }
 ```
 
-- [ ] **Step 2: 在 serverManager.ts 中添加 embeddingManager**
+> **关键修复**：添加 `--pooling cls` 参数，bge 模型必须使用此参数才能正确提取向量。超时增加到 90s 应对 GPU 冷启动。
 
-在 `ServerManager` 类中添加属性：
+- [ ] **Step 2: 在 serverManager.ts 中添加 embeddingManager 属性**
+
+在 `ServerManager` 类中添加：
 
 ```typescript
 import {EmbeddingServerManager} from './units/embeddingServerManager'
@@ -209,59 +259,41 @@ export class ServerManager {
     }
 ```
 
-- [ ] **Step 3: 提交**
+- [ ] **Step 3: 在 serverManager.ts 中移除 --embedding 标志**
+
+现在 embedding 服务独立了，chat 服务不再需要 `--embedding` 参数：
+
+```typescript
+// 修改前
+const args = [
+    '-m', this.modelPath,
+    '-c', '4096',
+    '--port', String(this.port),
+    '-ngl', this.gpuAvailable ? '99' : '0',
+    '--embedding',  // 删除此行
+    '--pooling', 'cls',  // 删除此行
+    '--host', '127.0.0.1'
+]
+
+// 修改后
+const args = [
+    '-m', this.modelPath,
+    '-c', '4096',
+    '--port', String(this.port),
+    '-ngl', this.gpuAvailable ? '99' : '0',
+    '--host', '127.0.0.1'
+]
+```
+
+- [ ] **Step 4: 提交**
 
 ```bash
 git add src/main/units/embeddingServerManager.ts src/main/serverManager.ts
 git commit -m "feat: 添加 EmbeddingServerManager 类
 
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
-```
-
----
-
-## Task 2: 创建工具函数 findLlamaServerExe
-
-**Files:**
-- Create: `src/main/units/llamaServerUtils.ts`
-
-- [ ] **Step 1: 创建 llamaServerUtils.ts**
-
-```typescript
-import {join} from 'path'
-import {existsSync} from 'fs'
-
-/**
- * 查找 llama-server.exe，支持动态文件名
- */
-export function findLlamaServerExe(dir: string): string {
-    if (!existsSync(dir)) return ''
-    try {
-        const files = require('fs').readdirSync(dir)
-        const exe = files.find((f: string) =>
-            f.startsWith('llama-server') && f.endsWith('.exe'))
-        return exe ? join(dir, exe) : ''
-    } catch {
-        return ''
-    }
-}
-```
-
-- [ ] **Step 2: 更新 embeddingServerManager.ts 使用工具函数**
-
-将 `findLlamaServerExe` 的内联实现替换为导入：
-
-```typescript
-import {findLlamaServerExe} from './llamaServerUtils'
-
-// 删除内联的 findLlamaServerExe 方法
-```
-
-- [ ] **Step 3: 提交**
-
-```bash
-git add src/main/units/llamaServerUtils.ts src/main/units/embeddingServerManager.ts
-git commit -m "refactor: 抽取 findLlamaServerExe 为工具函数
+- 独立的 8081 端口 embedding 服务
+- bge-small-zh-v1.5 模型 + --pooling cls
+- chat 服务移除 --embedding 参数
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 ```
@@ -277,10 +309,12 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 
 ```typescript
 // 修改前
-port: 8080
+host: '127.0.0.1',
+port: 8080,
 
 // 修改后
-port: 8081
+host: '127.0.0.1',
+port: 8081,
 ```
 
 - [ ] **Step 2: 提交**
@@ -309,11 +343,23 @@ const EMBEDDING_DIM = 2560
 const EMBEDDING_DIM = 384
 ```
 
-- [ ] **Step 2: 提交**
+- [ ] **Step 2: 添加 LanceDB 维度检查（防止旧数据导致静默错误）**
+
+在 `initialize()` 方法的 catch 块中（表不存在时），添加向量维度记录：
+
+```typescript
+log(`向量维度: ${EMBEDDING_DIM}（bge-small-zh-v1.5）`)
+```
+
+> **重要**：切换后需要删除旧数据目录，否则 LanceDB 会因 schema 不兼容报错。
+
+- [ ] **Step 3: 提交**
 
 ```bash
 git add src/main/indexManager.ts
 git commit -m "feat: 向量维度从 2560 改为 384（匹配 bge 模型）
+
+注意：切换后需要删除 AppData 中的旧数据目录
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 ```
@@ -336,23 +382,29 @@ async function initializeModules(): Promise<void> {
     indexManager = new IndexManager(userDataPath)
     ragEngine = new RagEngine(indexManager)
     await indexManager.initialize()
-    await serverManager.embeddingManager.start()  // 新增：启动 embedding 服务
-    await serverManager.start()                   // 启动 chat 服务
+
+    // 启动 embedding 服务（8081）
+    await serverManager.embeddingManager.start()
+    // 启动 chat 服务（8080）
+    await serverManager.start()
     log('Modules initialized')
 }
 ```
 
-- [ ] **Step 2: 修改停止逻辑**
+- [ ] **Step 2: 修改窗口关闭逻辑**
 
 ```typescript
-// 在 app.on('window-all-closed') 中
 app.on('window-all-closed', async () => {
-    await serverManager?.stop()                    // 先停止 chat
-    await serverManager?.embeddingManager?.stop()  // 再停止 embedding
+    // 先停止 chat 服务，再停止 embedding 服务
+    await serverManager?.stop()
+    await serverManager?.embeddingManager?.stop()
     if (process.platform !== 'darwin') app.quit()
 })
+```
 
-// 在 app.on('before-quit') 中
+- [ ] **Step 3: 修改退出前清理逻辑**
+
+```typescript
 app.on('before-quit', async () => {
     await serverManager?.stop()
     await serverManager?.embeddingManager?.stop()
@@ -360,11 +412,16 @@ app.on('before-quit', async () => {
 })
 ```
 
-- [ ] **Step 3: 提交**
+> 注意：使用 `?.` 操作符防止初始化未完成时 quit 的 NPE。
+
+- [ ] **Step 4: 提交**
 
 ```bash
 git add src/main/index.ts
 git commit -m "feat: 启动/停止时管理 embedding 服务
+
+- 启动顺序：embedding(8081) → chat(8080)
+- 停止顺序：chat → embedding
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 ```
@@ -378,14 +435,12 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 
 - [ ] **Step 1: 更新架构文档**
 
-在架构部分添加 embedding 服务说明：
+在主进程模块说明中添加 embedding 服务：
 
 ```markdown
-### 主进程模块（`src/main/`）
-
 - **serverManager.ts** - 管理 llama-server 子进程
   - chat 服务（8080）：Qwen3-4B 对话
-  - embeddingManager：独立管理 embedding 服务（8081），使用 bge-small-zh-v1.5 模型
+  - embeddingManager：独立管理 embedding 服务（8081），使用 bge-small-zh-v1.5 模型（384 维向量）
 ```
 
 - [ ] **Step 2: 提交**
@@ -401,7 +456,7 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 
 ## 数据迁移说明
 
-实现完成后，用户需要：
+切换后用户需要：
 
 1. 删除旧数据目录：
    ```
@@ -421,3 +476,5 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
 2. 导入文档，观察 embedding 向量化是否正常
 
 3. 提问测试 RAG 检索功能
+
+4. 检查设置页面服务状态显示是否正确
