@@ -6,7 +6,7 @@ files:
   - out/**/*
   - package.json
   - node_modules/**/*
-  - build/resources/**/*
+  - resources/**/*
   - '!**/.vscode/*'
   - '!src/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
@@ -16,8 +16,6 @@ files:
 asarUnpack:
   - "**/*.exe"
   - resources/**
-  - build/resources/**
-  - node_modules/**
 win:
   executableName: rag-knowledge-base
   target:

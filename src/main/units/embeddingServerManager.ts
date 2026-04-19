@@ -11,10 +11,9 @@ import {join} from 'path'
 import {existsSync} from 'fs'
 import {app} from 'electron'
 import {log} from '../logger'
-import {getCUDAInfo} from './nvidiaUtil'
-import * as nodeHttp from 'http'
 import {findLlamaServerExe} from './llamaServerUtils'
 import * as fs from 'fs'
+import {detectGpu, waitForServer} from './serverUtils'
 
 /** embedding 服务状态 */
 export interface EmbeddingServerStatus {
@@ -31,22 +30,21 @@ export class EmbeddingServerManager {
     private gpuAvailable: boolean
 
     constructor() {
-        this.gpuAvailable = this.detectGpu()
-        this.refreshPaths()
+        this.gpuAvailable = detectGpu()
     }
 
-    async refreshPaths(): Promise<void> {
-        const gpuInfo = await getCUDAInfo()
-        if (gpuInfo.available) {
-            console.log(`[Embedding] 检测到 GPU: ${gpuInfo.model}`)
-        } else {
-            console.warn('[Embedding] 未检测到 GPU，将使用 CPU 模式')
-        }
+    /** 初始化路径（需在 start 前调用） */
+    init(): void {
+        console.log(`[Embedding] app.getAppPath() = ${app.getAppPath()}`)
+        console.log(`[Embedding] process.resourcesPath = ${process.resourcesPath}`)
 
-        // dev 模式
-        const devResourcesDir = join(app.getAppPath(), '..', '..', 'resources', 'llama-server-GPU')
+        // dev 模式：app.getAppPath() 直接返回项目根目录
+        const devResourcesDir = join(app.getAppPath(), 'resources', 'llama-server-GPU')
         // 打包后
         const packedResourcesDir = join(process.resourcesPath!, 'app.asar.unpacked', 'resources', 'llama-server-GPU')
+
+        console.log(`[Embedding] devResourcesDir = ${devResourcesDir}, exists: ${existsSync(devResourcesDir)}`)
+        console.log(`[Embedding] packedResourcesDir = ${packedResourcesDir}, exists: ${existsSync(packedResourcesDir)}`)
 
         const resourcesDir = existsSync(devResourcesDir) ? devResourcesDir : packedResourcesDir
         this.llamaServerPath = findLlamaServerExe(resourcesDir) || join(resourcesDir, 'llama-server.exe')
@@ -58,8 +56,14 @@ export class EmbeddingServerManager {
     }
 
     private findEmbeddingModel(): string {
-        const devModelDir = join(app.getAppPath(), '..', '..', 'resources', 'bge-small-zh-v1.5-gguf')
+        // dev 模式：app.getAppPath() 直接返回项目根目录
+        const devModelDir = join(app.getAppPath(), 'resources', 'bge-small-zh-v1.5-gguf')
+        // 打包后
         const packedModelDir = join(process.resourcesPath!, 'app.asar.unpacked', 'resources', 'bge-small-zh-v1.5-gguf')
+
+        console.log(`[Embedding] devModelDir = ${devModelDir}, exists: ${existsSync(devModelDir)}`)
+        console.log(`[Embedding] packedModelDir = ${packedModelDir}, exists: ${existsSync(packedModelDir)}`)
+
         const modelDir = existsSync(devModelDir) ? devModelDir : packedModelDir
 
         try {
@@ -67,17 +71,10 @@ export class EmbeddingServerManager {
             const files = fs.readdirSync(modelDir)
             const modelFile = files.find((f) => f.endsWith('.gguf'))
             return modelFile ? join(modelDir, modelFile) : ''
-        } catch {
+        } catch (e) {
+            console.log(`[Embedding] 读取模型目录失败: ${e}`)
             return ''
         }
-    }
-
-    private detectGpu(): boolean {
-        const cudaPaths = [
-            'C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA',
-            'C:\\Windows\\System32\\nvcuda.dll'
-        ]
-        return cudaPaths.some((p) => existsSync(p))
     }
 
     async start(): Promise<void> {
@@ -123,7 +120,7 @@ export class EmbeddingServerManager {
         })
 
         // 等待时间增加到 90s，GPU 冷启动可能较慢
-        await this.waitForServer(this.port, 90000)
+        await waitForServer(this.port, 90000)
         log('[Embedding] embedding-server 启动成功，端口 8081')
     }
 
@@ -140,24 +137,5 @@ export class EmbeddingServerManager {
             return {state: 'idle', message: 'Embedding server not running', gpuAvailable: this.gpuAvailable}
         }
         return {state: 'running', message: `Embedding server running on port ${this.port}`, gpuAvailable: this.gpuAvailable}
-    }
-
-    private waitForServer(port: number, timeout: number): Promise<void> {
-        return new Promise((resolve, reject) => {
-            const start = Date.now()
-            const check = (): void => {
-                const req = nodeHttp.get(`http://localhost:${port}`, () => {
-                    resolve()
-                })
-                req.on('error', () => {
-                    if (Date.now() - start > timeout) {
-                        reject(new Error('embedding-server 启动超时'))
-                    } else {
-                        setTimeout(check, 1000)
-                    }
-                })
-            }
-            check()
-        })
     }
 }

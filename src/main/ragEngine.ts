@@ -61,61 +61,13 @@ export class RagEngine {
     }
 
     /**
-     * 执行 RAG 查询（非流式）
-     *
-     * @param question 用户问题
-     * @returns 查询结果（成功/失败、答案、引用）
-     */
-    // async query(question: string): Promise<{
-    //     success: boolean
-    //     answer?: string
-    //     citations?: RagChunk['citations']
-    //     error?: string
-    // }> {
-    //     // ===== 1. 检索相关文档块 =====
-    //     const searchResults = await this.indexManager.search(question, 5)
-    //
-    //     // 没有相关文档
-    //     if (searchResults.length === 0) {
-    //         return {
-    //             success: true,
-    //             answer: '未找到相关文件。请先导入文件。',
-    //             citations: []
-    //         }
-    //     }
-    //
-    //     // ===== 2. 构建上下文 =====
-    //     const context = searchResults
-    //         .map((r, i) => `[Document ${i + 1}] ${r.fileName}\n${r.chunkText}`)
-    //         .join('\n\n')
-    //
-    //     // ===== 3. 构建 prompt =====
-    //     const prompt = this.queryTemplate
-    //         .replace('{context}', context)
-    //         .replace('{question}', question)
-    //
-    //     // ===== 4. 生成答案 =====
-    //     const answer = await this.serverManager.generate(prompt)
-    //
-    //     // ===== 5. 构建引用来源 =====
-    //     const citations = searchResults.map((r) => ({
-    //         docId: r.docId,
-    //         fileName: r.fileName,
-    //         score: r.score,
-    //         excerpt: r.chunkText.substring(0, 100) + '...'
-    //     }))
-    //
-    //     return {success: true, answer, citations}
-    // }
-
-    /**
      * 构建 RAG prompt（用于流式查询）
      * @param question 用户问题
      * @returns 包含上下文的 prompt
      */
     async buildPrompt(question: string): Promise<{ prompt: string; citations: RagChunk['citations'] }> {
         const searchResults = await this.indexManager.search(question, 5) // 检索相关文档块
-
+        console.log('searchResults', searchResults)
         // 没有相关文档
         if (searchResults.length === 0) {
             const prompt = this.queryTemplate

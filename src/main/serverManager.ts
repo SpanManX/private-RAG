@@ -23,12 +23,12 @@ import {app, BrowserWindow} from 'electron'
 import {log} from './logger'
 import {getModelsDir, setModelsDir} from './store'
 import * as fs from "node:fs";
-import * as nodeHttp from 'http'
-// import http from 'isomorphic-git/http/node'
 import axios from "axios";
 import path from "node:path";
 import {getCUDAInfo} from "./units/nvidiaUtil";
 import {EmbeddingServerManager} from "./units/embeddingServerManager";
+import {detectGpu, waitForServer} from "./units/serverUtils";
+import {findLlamaServerExe} from "./units/llamaServerUtils";
 
 /** llama-server 服务状态 */
 export interface ServerStatus {
@@ -74,8 +74,7 @@ export class ServerManager {
     // private readonly EMBEDDING_FILE = 'bge-small-zh-v1.5-f16.gguf'
 
     constructor() {
-        // 构造函数中检测 GPU，后续启动服务时使用缓存结果
-        this.gpuAvailable = this.detectGpu()
+        this.gpuAvailable = detectGpu()
         console.log(`GPU 可用性（检测）: ${this.gpuAvailable}`)
         log(`GPU 可用性（缓存）: ${this.gpuAvailable}`)
         this.embeddingManager = new EmbeddingServerManager()
@@ -97,14 +96,14 @@ export class ServerManager {
             console.warn('警告: 未检测到可用 GPU，将回退至 CPU 模式');
         }
 
-        // dev 模式：electron 可执行文件的上一级的上一级是项目根目录
-        const devResourcesDir = join(app.getAppPath(), '..', '..', 'resources', 'llama-server-GPU')
+        // dev 模式：app.getAppPath() 直接返回项目根目录
+        const devResourcesDir = join(app.getAppPath(), 'resources', 'llama-server-GPU')
         // 打包后（asarUnpack）：解压到 app.asar.unpacked/resources/
         const packedResourcesDir = join(process.resourcesPath!, 'app.asar.unpacked', 'resources', 'llama-server-GPU')
 
         // 自动检测：dev 模式用 dev 路径，打包后用 prod 路径
         const resourcesDir = existsSync(devResourcesDir) ? devResourcesDir : packedResourcesDir
-        this.llamaServerPath = this.findLlamaServerExe(resourcesDir) || join(resourcesDir, 'llama-server.exe')
+        this.llamaServerPath = findLlamaServerExe(resourcesDir) || join(resourcesDir, 'llama-server.exe')
         log(`llama-server 路径: ${this.llamaServerPath}`)
         // 扫描查找 Qwen GGUF 模型文件
         this.modelPath = this.findModelFile('Qwen3', '.gguf') || ''
@@ -140,60 +139,6 @@ export class ServerManager {
         return null
     }
 
-    /** 扫描查找 embedding 模型文件 */
-    // private findEmbeddingFile(): string | null {
-    //     try {
-    //         const files = require('fs').readdirSync(this.modelsDir, {withFileTypes: true})
-    //         for (const dir of files) {
-    //             if (dir.isDirectory() && dir.name.includes('bge')) {
-    //                 const subDir = join(this.modelsDir, dir.name)
-    //                 const subFiles = require('fs').readdirSync(subDir)
-    //                 const match = subFiles.find((f: string) => f.endsWith('.gguf'))
-    //                 if (match) return join(subDir, match)
-    //             }
-    //         }
-    //     } catch {
-    //     }
-    //     return null
-    // }
-
-    /** 查找 llama-server.exe，支持动态文件名 */
-    private findLlamaServerExe(dir: string): string {
-        if (!existsSync(dir)) return ''
-        try {
-            const files = require('fs').readdirSync(dir)
-            const exe = files.find((f: string) =>
-                f.startsWith('llama-server') && f.endsWith('.exe'))
-            return exe ? join(dir, exe) : join(dir, 'llama-server.exe')
-        } catch {
-            return join(dir, 'llama-server.exe')
-        }
-    }
-
-    // private getLlamaServerZipPath(): string {
-    //     return join(this.modelsDir, 'llama-server.zip')
-    // }
-
-    /**
-     * 解压 llama-server ZIP 包
-     * llama.cpp 发布包是 ZIP 格式，需要解压到 llama-server 目录
-     */
-    // private extractLlamaServer(zipPath: string, targetDir: string): void {
-    //     try {
-    //         if (!existsSync(targetDir)) {
-    //             mkdirSync(targetDir, {recursive: true})
-    //         }
-    //         const zip = new AdmZip(zipPath)
-    //         zip.extractAllTo(targetDir, true)
-    //         log(`解压成功到: ${targetDir}`)
-    //         // 解压后刷新路径，获取实际文件名
-    //         this.refreshPaths()
-    //     } catch (err) {
-    //         log(`解压失败: ${err}`)
-    //         throw err
-    //     }
-    // }
-
     /** 获取当前模型目录 */
     getModelsDir(): string {
         return this.modelsDir
@@ -212,18 +157,6 @@ export class ServerManager {
             return {state: 'idle', message: 'Server not running', gpuAvailable: this.gpuAvailable}
         }
         return {state: 'running', message: `llama-server running on port ${this.port}`, gpuAvailable: this.gpuAvailable}
-    }
-
-    /**
-     * 检测 GPU 是否可用
-     * 通过检查 CUDA 安装路径和 nvcuda.dll 文件
-     */
-    private detectGpu(): boolean {
-        const cudaPaths = [
-            'C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA',
-            'C:\\Windows\\System32\\nvcuda.dll'
-        ]
-        return cudaPaths.some((p) => existsSync(p))
     }
 
     /** 检查文件是否存在且大小合理 */
@@ -299,7 +232,7 @@ export class ServerManager {
         })
 
         // 等待服务就绪（最多 60 秒）
-        await this.waitForServer(this.port, 60000)
+        await waitForServer(this.port, 60000)
         log('llama-server 启动成功')
     }
 
@@ -429,26 +362,4 @@ export class ServerManager {
     //     return `${speed.toFixed(1)} MB/s`
     // }
 
-    /**
-     * 等待 llama-server 就绪
-     * 通过轮询 HTTP 端口检测服务是否启动
-     */
-    private waitForServer(port: number, timeout: number): Promise<void> {
-        return new Promise((resolve, reject) => {
-            const start = Date.now()
-            const check = (): void => {
-                const req = nodeHttp.get(`http://localhost:${port}`, () => {
-                    resolve()
-                })
-                req.on('error', () => {
-                    if (Date.now() - start > timeout) {
-                        reject(new Error('llama-server 启动超时'))
-                    } else {
-                        setTimeout(check, 1000)
-                    }
-                })
-            }
-            check()
-        })
-    }
 }

@@ -37,19 +37,18 @@ export interface DocumentRecord {
 
 /** 每个 chunk 的大小（字符数） */
 const CHUNK_SIZE = 512
-/**
- * Embedding 向量维度
- * bge-small-zh-v1.5 = 384 维
- **/
-const EMBEDDING_DIM = 384
+const TABLE_NAME = 'chunks'
 
 export class IndexManager {
     private db!: lancedb.Connection
-    private table!: lancedb.Table
+    private table: lancedb.Table | null = null
+    private embeddingDim: number | null = null
     // 内存中的文档记录缓存（用于 listDocuments）
     private docs: Map<string, DocumentRecord> = new Map()
     // LangChain Embeddings 实例
     private embeddings = getEmbeddings()
+    // 索引是否已构建（避免重复建索引）
+    private indexBuilt = false
 
     constructor(private userDataPath: string) {
     }
@@ -71,41 +70,110 @@ export class IndexManager {
         log(`LanceDB 数据库路径: ${dbPath}`)
         this.db = await lancedb.connect(dbPath)
 
-        // 定义表 schema（使用 Apache Arrow 类型）
-        const schema = new Schema([
+        const tableNames = await this.db.tableNames()
+        if (tableNames.includes(TABLE_NAME)) {
+            this.table = await this.db.openTable(TABLE_NAME)
+            this.embeddingDim = await this.getTableVectorDimension(this.table)
+            this.indexBuilt = true  // 已有表假设已有索引
+            log(`LanceDB 表已打开，向量维度: ${this.embeddingDim ?? 'unknown'}`)
+            await this.loadDocuments()
+        } else {
+            // 不提前建表，等拿到 embedding 真实维度后再建
+            this.table = null
+            this.embeddingDim = null
+            this.docs.clear()
+            log('LanceDB 表尚未创建，将在首次向量化时按真实维度创建')
+        }
+
+        log(`LanceDB 初始化完成: ${dbPath}`)
+    }
+
+    private buildSchema(embeddingDim: number): Schema {
+        return new Schema([
             new Field('id', new Utf8()),
             new Field('docId', new Utf8()),
             new Field('fileName', new Utf8()),
             new Field('chunkIndex', new Int32()),
             new Field('chunkText', new Utf8()),
-            // 384 维向量列（fixed_size_list）
-            new Field('vector', new FixedSizeList(EMBEDDING_DIM, new Field('item', new Float32())))
+            new Field('vector', new FixedSizeList(embeddingDim, new Field('item', new Float32())))
         ])
+    }
 
+    private recommendedNumSubVectors(dim: number): number {
+        if (dim % 16 === 0) return Math.max(1, dim / 16)
+        if (dim % 8 === 0) return Math.max(1, dim / 8)
+        return 1
+    }
+
+    private async createChunksTable(embeddingDim: number): Promise<void> {
+        const schema = this.buildSchema(embeddingDim)
+        this.table = await this.db.createEmptyTable(TABLE_NAME, schema)
+        this.embeddingDim = embeddingDim
+        log(`LanceDB 表已创建（向量维度: ${embeddingDim}）`)
+        // 不在空表上建索引，等添加数据后再建
+    }
+
+    /** 在已有数据的表上创建向量索引（必须在有数据后才能调用） */
+    private async buildVectorIndex(): Promise<void> {
+        if (!this.table || !this.embeddingDim) return
         try {
-            // 尝试打开已存在的表
-            this.table = await this.db.openTable('chunks')
-            log('LanceDB 表已打开')
-            // 从 LanceDB 加载已存在的文档列表
-            await this.loadDocuments()
-        } catch {
-            // 表不存在，创建新表
-            this.table = await this.db.createEmptyTable('chunks', schema)
-            log('LanceDB 表已创建（带向量列）')
-            log(`向量维度: ${EMBEDDING_DIM}（bge-small-zh-v1.5）`)
-
-            // 为 vector 列创建 IVF_PQ 索引（用于高效相似性搜索）
+            const rowCount = await this.table.countRows()
+            // 数据量太少不建索引（IVF_PQ 需要足够数据）
+            if (rowCount < 10) {
+                log(`数据量太少（${rowCount} 个），跳过索引构建`)
+                return
+            }
+            // 分区数不超过行数
+            const numPartitions = Math.min(64, rowCount)
             await this.table.createIndex('vector', {
                 config: Index.ivfPq({
-                    numPartitions: 64,
-                    numSubVectors: 96
+                    numPartitions,
+                    numSubVectors: this.recommendedNumSubVectors(this.embeddingDim)
                 }),
                 replace: true
             })
-            log('向量索引已创建')
+            log(`向量索引已创建（${numPartitions} 个分区，${rowCount} 个向量）`)
+        } catch (err) {
+            log(`建索引失败（非严重）: ${err}`)
+        }
+    }
+
+    private async getTableVectorDimension(table: lancedb.Table): Promise<number | null> {
+        const schema = await table.schema()
+        const vectorField = schema.fields.find((f) => f.name === 'vector')
+        if (!vectorField) return null
+        const vectorType = vectorField.type as any
+        if (!vectorType || typeof vectorType.listSize !== 'number') return null
+        return vectorType.listSize
+    }
+
+    private async ensureTableForDimension(dim: number): Promise<void> {
+        if (!this.table) {
+            await this.createChunksTable(dim)
+            return
         }
 
-        log(`LanceDB 初始化完成: ${dbPath}`)
+        const tableDim = this.embeddingDim ?? (await this.getTableVectorDimension(this.table))
+        if (tableDim === dim) {
+            this.embeddingDim = dim
+            return
+        }
+
+        const rows = await this.table.countRows()
+        if (rows === 0) {
+            log(`检测到空表维度不匹配（table=${tableDim}, embedding=${dim}），自动重建表`)
+            this.table.close()
+            await this.db.dropTable(TABLE_NAME)
+            this.docs.clear()
+            this.indexBuilt = false
+            await this.createChunksTable(dim)
+            return
+        }
+
+        throw new Error(
+            `Embedding dimension mismatch: current index=${tableDim}, model output=${dim}. ` +
+            `Please delete existing documents and re-import.`
+        )
     }
 
     /**
@@ -113,6 +181,10 @@ export class IndexManager {
      * 在初始化时调用，用于恢复内存缓存
      */
     private async loadDocuments(): Promise<void> {
+        if (!this.table) {
+            this.docs.clear()
+            return
+        }
         try {
             // 获取所有唯一的 docId 和 fileName
             // 使用 distinct 查询获取唯一文档
@@ -168,6 +240,30 @@ export class IndexManager {
         return chunks.filter((c) => c.length > 10)
     }
 
+    private validateEmbeddingOrThrow(embedding: number[], context: string): number[] {
+        if (!Array.isArray(embedding)) {
+            throw new Error(`Invalid embedding type (${context})`)
+        }
+        const expectedDim = this.embeddingDim ?? embedding.length
+        if (!this.embeddingDim) {
+            this.embeddingDim = expectedDim
+        }
+        if (embedding.length !== expectedDim) {
+            throw new Error(
+                `Invalid embedding dimension (${context}): expected ${expectedDim}, got ${embedding.length}`
+            )
+        }
+        if (embedding.some((value) => !Number.isFinite(value))) {
+            throw new Error(`Embedding contains non-finite values (${context})`)
+        }
+        return embedding
+    }
+
+    private async embedOrThrow(text: string, context: string): Promise<number[]> {
+        const embedding = await this.embeddings.embedQuery(text)
+        return this.validateEmbeddingOrThrow(embedding, context)
+    }
+
     /**
      * 添加文档到向量数据库
      * @param filePath 原始文件路径
@@ -182,6 +278,9 @@ export class IndexManager {
 
         // 文本分块
         const chunks = this.chunkText(text)
+        if (chunks.length === 0) {
+            throw new Error(`No valid chunks generated for file: ${fileName}`)
+        }
 
         // 为每个 chunk 生成向量
         type ChunkRecord = {
@@ -193,17 +292,26 @@ export class IndexManager {
             vector: number[]
         }
         const records: ChunkRecord[] = []
-        for (let i = 0; i < chunks.length; i++) {
-            const chunkText = chunks[i]
-            // 调用 LangChain Embeddings 获取向量
-            let embedding: number[]
-            try {
-                embedding = await this.embeddings.embedQuery(chunkText)
-            } catch (err) {
-                log(`Embedding 错误: ${err}，使用零向量`)
-                embedding = Array(EMBEDDING_DIM).fill(0)
-            }
+        const firstEmbedding = await this.embedOrThrow(
+            chunks[0],
+            `doc=${docId}, file=${fileName}, chunk=0`
+        )
+        await this.ensureTableForDimension(firstEmbedding.length)
+        records.push({
+            id: randomUUID(),
+            docId,
+            fileName,
+            chunkIndex: 0,
+            chunkText: chunks[0],
+            vector: firstEmbedding
+        })
 
+        for (let i = 1; i < chunks.length; i++) {
+            const chunkText = chunks[i]
+            const embedding = await this.embedOrThrow(
+                chunkText,
+                `doc=${docId}, file=${fileName}, chunk=${i}`
+            )
             records.push({
                 id: randomUUID(),
                 docId,
@@ -215,7 +323,16 @@ export class IndexManager {
         }
 
         // 添加到 LanceDB
+        if (!this.table) {
+            throw new Error('Vector table is not initialized')
+        }
         await this.table.add(records)
+
+        // 首次添加数据后建索引（需要数据才能训练 IVF_PQ）
+        if (!this.indexBuilt) {
+            this.indexBuilt = true
+            await this.buildVectorIndex()
+        }
 
         // 更新内存缓存
         this.docs.set(docId, {
@@ -245,6 +362,9 @@ export class IndexManager {
     ): Promise<string> {
         const docId = randomUUID()
         const fileName = filePath.split(/[/\\]/).pop() ?? filePath
+        if (chunks.length === 0) {
+            throw new Error(`No valid chunks generated for file: ${fileName}`)
+        }
 
         type ChunkRecord = {
             id: string
@@ -255,17 +375,27 @@ export class IndexManager {
             vector: number[]
         }
         const records: ChunkRecord[] = []
+        const firstEmbedding = await this.embedOrThrow(
+            chunks[0],
+            `doc=${docId}, file=${fileName}, chunk=0`
+        )
+        await this.ensureTableForDimension(firstEmbedding.length)
+        records.push({
+            id: randomUUID(),
+            docId,
+            fileName,
+            chunkIndex: 0,
+            chunkText: chunks[0],
+            vector: firstEmbedding
+        })
+        onChunkProgress(0)
 
-        for (let i = 0; i < chunks.length; i++) {
+        for (let i = 1; i < chunks.length; i++) {
             const chunkText = chunks[i]
-            let embedding: number[]
-            try {
-                embedding = await this.embeddings.embedQuery(chunkText)
-            } catch (err) {
-                log(`Embedding 错误: ${err}，使用零向量`)
-                embedding = Array(EMBEDDING_DIM).fill(0)
-            }
-
+            const embedding = await this.embedOrThrow(
+                chunkText,
+                `doc=${docId}, file=${fileName}, chunk=${i}`
+            )
             records.push({
                 id: randomUUID(),
                 docId,
@@ -278,7 +408,16 @@ export class IndexManager {
             onChunkProgress(i)
         }
 
+        if (!this.table) {
+            throw new Error('Vector table is not initialized')
+        }
         await this.table.add(records)
+
+        // 首次添加数据后建索引
+        if (!this.indexBuilt) {
+            this.indexBuilt = true
+            await this.buildVectorIndex()
+        }
 
         this.docs.set(docId, {
             id: docId,
@@ -298,29 +437,35 @@ export class IndexManager {
      * @returns 匹配的搜索结果
      */
     async search(query: string, topK = 5): Promise<SearchResult[]> {
+        if (!this.table) {
+            return []
+        }
         try {
             // 1. 将查询文本转换为向量
             let queryVector: number[]
             try {
-                queryVector = await this.embeddings.embedQuery(query)
-                console.log(`查询 "${query}" 的向量前5维: ${queryVector.slice(0, 5).join(', ')}`)
+                queryVector = this.validateEmbeddingOrThrow(
+                    await this.embeddings.embedQuery(query),
+                    `query=${query.slice(0, 40)}`
+                )
+                await this.ensureTableForDimension(queryVector.length)
+                console.log(`[Search] 查询 "${query}" 向量维度: ${queryVector.length}, 前5维: ${queryVector.slice(0, 5).join(', ')}`)
             } catch (err) {
                 log(`Query embedding 错误: ${err}`)
                 return []
             }
 
             // 2. 执行向量相似性搜索
-            // nearestTo 找到最近的向量，_distance 表示 L2 距离
             const results = await this.table
                 .query()
                 .nearestTo(queryVector)
                 .limit(topK)
                 .toArray()
 
-            log(`搜索结果数量: ${results.length}, 距离: ${results.map(r => (r as any)._distance).join(', ')}`)
+            console.log(`[Search] 原始结果: ${results.length}, 距离: ${results.map(r => (r as any)._distance).join(', ')}`)
 
-            // 过滤掉距离过大的结果（距离 > 0.8 表示相似度很低）
-            const DISTANCE_THRESHOLD = 0.8
+            // 过滤掉距离过大的结果（距离 < 1.5，约等于余弦相似度 > 0.22）
+            const DISTANCE_THRESHOLD = 1.5
             return (Array.isArray(results) ? results : [])
                 .filter((r: any) => (r as any)._distance < DISTANCE_THRESHOLD)
                 .map((r: any) => ({
@@ -345,6 +490,10 @@ export class IndexManager {
      * @param docId 要删除的文档 ID
      */
     async deleteDocument(docId: string): Promise<void> {
+        if (!this.table) {
+            this.docs.delete(docId)
+            return
+        }
         // 从 LanceDB 删除所有属于该文档的块
         await this.table.delete(`docId = '${docId}'`)
         // 从内存缓存移除

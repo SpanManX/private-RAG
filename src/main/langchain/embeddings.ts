@@ -53,6 +53,12 @@ export class LlamaEmbeddings extends Embeddings {
           res.on('data', (chunk) => (data += chunk))
           res.on('end', () => {
             try {
+              const statusCode = res.statusCode ?? 500
+              if (statusCode < 200 || statusCode >= 300) {
+                reject(new Error(`Embedding HTTP ${statusCode}: ${data}`))
+                return
+              }
+
               const parsed = JSON.parse(data)
 
               // llama-server 返回格式: [{"index":0,"embedding":[[...],...]}] 或 {"embedding": [...]}
@@ -61,7 +67,12 @@ export class LlamaEmbeddings extends Embeddings {
                 const emb = parsed[0]?.embedding
                 embedding = Array.isArray(emb) ? (Array.isArray(emb[0]) ? emb[0] : emb) : []
               } else {
-                embedding = parsed.embedding || []
+                embedding = parsed.embedding || parsed?.data?.[0]?.embedding || []
+              }
+
+              if (!Array.isArray(embedding) || embedding.length === 0) {
+                reject(new Error(`Embedding response has no vector: ${data}`))
+                return
               }
 
               // 归一化向量（L2 norm）

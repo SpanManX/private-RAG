@@ -81,10 +81,9 @@ async function initializeModules(): Promise<void> {
     indexManager = new IndexManager(userDataPath)
     ragEngine = new RagEngine(indexManager)
     await indexManager.initialize()  // 初始化 LanceDB 连接
-    // 启动 embedding 服务（8081）
-    await serverManager.embeddingManager.start()
-    // 启动 chat 服务（8080）
-    await serverManager.start()
+    // 初始化 embedding 服务路径（不自动启动，等用户点击按钮）
+    serverManager.embeddingManager.init()
+    await serverManager.refreshPaths()
     log('Modules initialized')
 }
 
@@ -101,8 +100,18 @@ async function initializeModules(): Promise<void> {
 function registerIpcHandlers(): void {
     // -------- llama-server 服务管理 --------
     ipcMain.handle('server:status', () => serverManager.getStatus())
-    ipcMain.handle('server:start', () => serverManager.start())
-    ipcMain.handle('server:stop', () => serverManager.stop())
+    ipcMain.handle('server:start', async () => {
+        // 仅在用户点击“启动服务”时启动两个服务
+        await serverManager.start()
+        await serverManager.embeddingManager.start()
+        return serverManager.getStatus()
+    })
+    ipcMain.handle('server:stop', async () => {
+        // 停止顺序：先 chat 服务，再 embedding 服务
+        await serverManager.stop()
+        await serverManager.embeddingManager.stop()
+        return serverManager.getStatus()
+    })
     ipcMain.handle('server:download-model', () => serverManager.downloadModel())
     ipcMain.handle('server:cancel-download', () => serverManager.cancelDownload())
 
@@ -125,6 +134,9 @@ function registerIpcHandlers(): void {
     // 导入单个文档：解析 → 分块 → 向量化 → 存储
     ipcMain.handle('document:import', async (_event, filePath: string) => {
         try {
+            if (serverManager.embeddingManager.getStatus().state !== 'running') {
+                return {success: false, error: 'Embedding service is not running. Please click "启动服务" first.'}
+            }
             const text = await documentProcessor.parse(filePath)
             console.log(text, '单文件')
             const docId = await indexManager.addDocument(filePath, text)
@@ -139,62 +151,96 @@ function registerIpcHandlers(): void {
     ipcMain.handle('document:import-batch', async (_event, filePaths: string[]) => {
         const win = BrowserWindow.getAllWindows()[0]
         if (!win) return []
-
-        // ===== 阶段一：解析所有文件，统计总 chunk 数 =====
-        const parsedFiles: { filePath: string; text: string; chunks: string[] }[] = []
-        for (let i = 0; i < filePaths.length; i++) {
-            const filePath = filePaths[i]
-            const text = await documentProcessor.parse(filePath)
-            const chunks = indexManager.chunkText(text)
-            parsedFiles.push({ filePath, text, chunks })
-
+        if (serverManager.embeddingManager.getStatus().state !== 'running') {
             win.webContents.send('document:import-progress', {
-                phase: 'parsing',
-                fileName: filePath.split(/[/\\]/).pop() ?? filePath,
-                fileIndex: i + 1,
+                phase: 'done',
+                fileName: '',
+                fileIndex: 0,
                 fileTotal: filePaths.length,
                 chunkIndex: 0,
                 chunkTotal: 0,
-                percent: Math.round(((i + 1) / filePaths.length) * 50)
+                percent: 100
             })
+            return filePaths.map((filePath) => ({
+                filePath,
+                success: false,
+                error: 'Embedding service is not running. Please click "启动服务" first.'
+            }))
         }
 
-        // ===== 阶段二：向量化所有 chunk =====
-        const results: any = []
-        let globalChunkIndex = 0
-        const totalChunks = parsedFiles.reduce((sum, f) => sum + f.chunks.length, 0)
+        try {
+            // ===== 阶段一：解析所有文件，统计总 chunk 数 =====
+            const parsedFiles: { filePath: string; text: string; chunks: string[] }[] = []
+            for (let i = 0; i < filePaths.length; i++) {
+                const filePath = filePaths[i]
+                const text = await documentProcessor.parse(filePath)
+                const chunks = indexManager.chunkText(text)
+                parsedFiles.push({filePath, text, chunks})
 
-        for (let i = 0; i < parsedFiles.length; i++) {
-            const { filePath, text, chunks } = parsedFiles[i]
-            const docId = await indexManager.addDocumentWithProgress(
-                filePath, text, chunks,
-                () => {
-                    globalChunkIndex++
-                    win.webContents.send('document:import-progress', {
-                        phase: 'vectorizing',
-                        fileName: filePath.split(/[/\\]/).pop() ?? filePath,
-                        fileIndex: i + 1,
-                        fileTotal: filePaths.length,
-                        chunkIndex: globalChunkIndex,
-                        chunkTotal: totalChunks,
-                        percent: 50 + Math.round((globalChunkIndex / totalChunks) * 50)
-                    })
-                }
-            )
-            results.push({ filePath, success: true, docId })
+                win.webContents.send('document:import-progress', {
+                    phase: 'parsing',
+                    fileName: filePath.split(/[/\\]/).pop() ?? filePath,
+                    fileIndex: i + 1,
+                    fileTotal: filePaths.length,
+                    chunkIndex: 0,
+                    chunkTotal: 0,
+                    percent: Math.round(((i + 1) / filePaths.length) * 50)
+                })
+            }
+
+            // ===== 阶段二：向量化所有 chunk =====
+            const results: any = []
+            let globalChunkIndex = 0
+            const totalChunks = parsedFiles.reduce((sum, f) => sum + f.chunks.length, 0)
+
+            for (let i = 0; i < parsedFiles.length; i++) {
+                const {filePath, text, chunks} = parsedFiles[i]
+                const docId = await indexManager.addDocumentWithProgress(
+                    filePath, text, chunks,
+                    () => {
+                        globalChunkIndex++
+                        win.webContents.send('document:import-progress', {
+                            phase: 'vectorizing',
+                            fileName: filePath.split(/[/\\]/).pop() ?? filePath,
+                            fileIndex: i + 1,
+                            fileTotal: filePaths.length,
+                            chunkIndex: globalChunkIndex,
+                            chunkTotal: totalChunks,
+                            percent: 50 + Math.round((globalChunkIndex / totalChunks) * 50)
+                        })
+                    }
+                )
+                results.push({filePath, success: true, docId})
+            }
+
+            win.webContents.send('document:import-progress', {
+                phase: 'done',
+                fileName: '',
+                fileIndex: filePaths.length,
+                fileTotal: filePaths.length,
+                chunkIndex: totalChunks,
+                chunkTotal: totalChunks,
+                percent: 100
+            })
+
+            return results
+        } catch (error) {
+            log('Document batch import error:', error)
+            win.webContents.send('document:import-progress', {
+                phase: 'done',
+                fileName: '',
+                fileIndex: filePaths.length,
+                fileTotal: filePaths.length,
+                chunkIndex: 0,
+                chunkTotal: 0,
+                percent: 100
+            })
+            return filePaths.map((filePath) => ({
+                filePath,
+                success: false,
+                error: String(error)
+            }))
         }
-
-        win.webContents.send('document:import-progress', {
-            phase: 'done',
-            fileName: '',
-            fileIndex: filePaths.length,
-            fileTotal: filePaths.length,
-            chunkIndex: totalChunks,
-            chunkTotal: totalChunks,
-            percent: 100
-        })
-
-        return results
     })
 
 
@@ -218,6 +264,12 @@ function registerIpcHandlers(): void {
     // 流式查询：返回 prompt 和引用，让前端使用 fetch-event-source 调用 llama-server
     ipcMain.handle('rag:query-stream', async (_event, question: string) => {
         try {
+            if (serverManager.getStatus().state !== 'running') {
+                return {success: false, error: 'Model service is not running. Please click "启动服务" first.'}
+            }
+            if (serverManager.embeddingManager.getStatus().state !== 'running') {
+                return {success: false, error: 'Embedding service is not running. Please click "启动服务" first.'}
+            }
             const {prompt, citations} = await ragEngine.buildPrompt(question)
             return {success: true, prompt, citations}
         } catch (error) {
