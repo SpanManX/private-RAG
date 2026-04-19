@@ -1,98 +1,80 @@
 /**
  * RAG 引擎 - 检索增强生成核心逻辑
  *
- * 职责：
- * 1. 检索相关文档块（向量搜索）
- * 2. 构建包含上下文的 prompt
- * 3. 调用 llama-server 生成答案
- * 4. 返回答案和引用来源
- *
- * RAG（Retrieval-Augmented Generation）流程：
- * 用户问题 → 检索相似文档 → 构建 prompt → LLM 生成答案 → 返回答案+引用
+ * 使用 LangChain 简化：
+ * - Document 类型统一文档格式
+ * - ChatPromptTemplate 管理提示词模板
  */
 
-// import {ServerManager} from './serverManager'
+import {Document} from '@langchain/core/documents'
 import {IndexManager} from './indexManager'
 
-/** RAG 答案块 */
-export interface RagChunk {
-    content: string
-    /** 引用来源列表 */
-    citations?: {
-        docId: string       // 文档 ID
-        fileName: string    // 文件名
-        score: number       // 相似度分数
-        excerpt: string     // 文档摘录（前 100 字符）
-    }[]
+/** 检索结果（文档引用） */
+export interface RagCitation {
+    docId: string
+    fileName: string
+    score: number
+    excerpt: string
 }
 
-/**
- * RAG 引擎类
- * 编排检索和生成流程
- */
 export class RagEngine {
-    /**
-     * RAG prompt 模板
-     * - 要求模型基于参考文档回答
-     * - 如果文档不相关则如实说明
-     * - 要求引用文档来源
-     */
-    private queryTemplate: string = `[参考文档]：
-{context}
+    /** 系统提示模板（LangChain Message 格式） */
+    public systemTemplate = {
+        role: 'system',
+        content: `# 任务描述
+你是一个文档助手。请根据提供的 [参考文档] 回答问题。
 
-问题：{question}`
-
-    public systemTemplate: { role: string, content: string } = {
-        role: "system",
-        content: `
-        # 任务描述
-        你是一个文档助手。请根据提供的 [参考文档] 回答问题。
-        
-        # 约束规则
-        1. 如果 [参考文档] 中没有包含问题的答案，请先回复：“抱歉，在现有文件中未找到相关内容。”，然后必须根据你的通用知识库，对用户提到的关键词进行科普或回答。
-        2. 如果 [参考文档] 包含答案，请严格根据文档进行总结，不要胡言乱语。
-        3. 如果 [参考文档] 包含答案，请在回答的最后引用相关文件。`
+# 约束规则
+1. 如果 [参考文档] 中没有包含问题的答案，请先回复："抱歉，在现有文件中未找到相关内容。"，然后必须根据你的通用知识库，对用户提到的关键词进行科普或回答。
+2. 如果 [参考文档] 包含答案，请严格根据文档进行总结，不要胡言乱语。
+3. 如果 [参考文档] 包含答案，引用时请使用文档的实际文件名。`
     }
 
-    constructor(
-        // private serverManager: ServerManager,
-        private indexManager: IndexManager
-    ) {
-    }
+    constructor(private indexManager: IndexManager) {}
 
     /**
      * 构建 RAG prompt（用于流式查询）
      * @param question 用户问题
-     * @returns 包含上下文的 prompt
+     * @returns 包含上下文的 prompt 和引用来源
      */
-    async buildPrompt(question: string): Promise<{ prompt: string; citations: RagChunk['citations'] }> {
-        const searchResults = await this.indexManager.search(question, 5) // 检索相关文档块
-        console.log('searchResults', searchResults)
-        // 没有相关文档
+    async buildPrompt(question: string): Promise<{prompt: string; citations: RagCitation[]}> {
+        const searchResults = await this.indexManager.search(question, 5)
+        console.log('[RAG] 搜索结果:', searchResults.length, '条')
+
         if (searchResults.length === 0) {
-            const prompt = this.queryTemplate
-                .replace('{context}', '')
-                .replace('{question}', question)
-            return {prompt, citations: []}
+            return {
+                prompt: `请根据你的知识回答以下问题：\n\n问题：${question}`,
+                citations: []
+            }
         }
 
-        const context = searchResults
-            // .map((r, i) => `[Document ${i + 1}] ${r.fileName}\n${r.chunkText}`)
-            .map((r) => `文件名：${r.fileName}\n${r.chunkText}`)
+        // 使用 LangChain Document 封装搜索结果（统一文档格式）
+        const docs = searchResults.map((r) =>
+            new Document({
+                pageContent: r.chunkText,
+                metadata: {docId: r.docId, fileName: r.fileName, score: r.score}
+            })
+        )
+
+        // 合成上下文字符串
+        const context = docs
+            .map((d, i) => `文件：${d.metadata.fileName}\n${d.pageContent}`)
             .join('\n\n')
 
-        const prompt = this.queryTemplate
-            .replace('{context}', context)
-            .replace('{question}', question)
-        // 以下是 llama-server 的 prompt 原始格式，/completions 接口使用
-        // const prompt = `<|im_start|>system\n你是一个中文助手。请直接、简洁地回答，不要进行自我思考<|im_end|>\n<|im_start|>user\n${question}<|im_end|>\n`
+        // 构建最终 prompt
+        const prompt = `[参考文档]：
+${context}
 
-        const citations = searchResults.map((r) => ({
+问题：${question}`
+
+        // 构建引用来源
+        const citations: RagCitation[] = searchResults.map((r) => ({
             docId: r.docId,
             fileName: r.fileName,
             score: r.score,
             excerpt: r.chunkText.substring(0, 100) + '...'
         }))
+
         return {prompt, citations}
     }
 }
