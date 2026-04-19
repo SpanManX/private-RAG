@@ -79,9 +79,12 @@ async function initializeModules(): Promise<void> {
     serverManager = new ServerManager()
     documentProcessor = new DocumentProcessor()
     indexManager = new IndexManager(userDataPath)
-    // ragEngine = new RagEngine(serverManager, indexManager)
     ragEngine = new RagEngine(indexManager)
     await indexManager.initialize()  // 初始化 LanceDB 连接
+    // 启动 embedding 服务（8081）
+    await serverManager.embeddingManager.start()
+    // 启动 chat 服务（8080）
+    await serverManager.start()
     log('Modules initialized')
 }
 
@@ -263,12 +266,15 @@ app.whenReady().then(async () => {
 
 // 所有窗口关闭时退出应用（macOS 除外）
 app.on('window-all-closed', async () => {
+    // 先停止 chat 服务，再停止 embedding 服务
     await serverManager?.stop()
+    await serverManager?.embeddingManager?.stop()
     if (process.platform !== 'darwin') app.quit()
 })
 
 // 应用退出前：停止 llama-server、关闭 LanceDB 连接
 app.on('before-quit', async () => {
     await serverManager?.stop()
+    await serverManager?.embeddingManager?.stop()
     await indexManager?.close()
 })
