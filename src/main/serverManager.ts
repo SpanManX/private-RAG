@@ -28,6 +28,7 @@ import * as nodeHttp from 'http'
 import axios from "axios";
 import path from "node:path";
 import {getCUDAInfo} from "./units/nvidiaUtil";
+import {EmbeddingServerManager} from "./units/embeddingServerManager";
 
 /** llama-server 服务状态 */
 export interface ServerStatus {
@@ -58,6 +59,9 @@ export class ServerManager {
     // 缓存 GPU 检测结果，避免每次查询时重复文件系统检查
     private gpuAvailable: boolean
 
+    // embedding 服务管理器
+    public embeddingManager: EmbeddingServerManager
+
     // ========== 模型下载地址配置 ==========
     // llama-server: llama.cpp Windows x64 CPU 版本（ZIP 压缩包）
     // private readonly LLAMA_SERVER_URL = 'https://github.com/ggml-org/llama.cpp/releases/download/b5482/llama-b5482-bin-win-cpu-x64.zip'
@@ -74,6 +78,7 @@ export class ServerManager {
         this.gpuAvailable = this.detectGpu()
         console.log(`GPU 可用性（检测）: ${this.gpuAvailable}`)
         log(`GPU 可用性（缓存）: ${this.gpuAvailable}`)
+        this.embeddingManager = new EmbeddingServerManager()
         this.refreshPaths()
     }
 
@@ -92,22 +97,15 @@ export class ServerManager {
             console.warn('警告: 未检测到可用 GPU，将回退至 CPU 模式');
         }
 
-        // dev 模式：从项目根目录的 resources 查找
-        const devResourcesDir = join(app.getAppPath(), 'resources', 'llama-server-GPU')
-        // 打包后：从 process.resourcesPath 的 build/resources 查找
-        // const packedResourcesDir = join(process.resourcesPath!, 'build', 'resources', 'llama-server')
-        // 打包后（asar + asarUnpack）：解压到 app.asar.unpacked/build/resources/
-        const packedResourcesDir = join(process.resourcesPath!, 'app.asar.unpacked', 'build', 'resources', 'llama-server-GPU')
+        // dev 模式：electron 可执行文件的上一级的上一级是项目根目录
+        const devResourcesDir = join(app.getAppPath(), '..', '..', 'resources', 'llama-server-GPU')
+        // 打包后（asarUnpack）：解压到 app.asar.unpacked/resources/
+        const packedResourcesDir = join(process.resourcesPath!, 'app.asar.unpacked', 'resources', 'llama-server-GPU')
 
-        if (existsSync(devResourcesDir)) {
-            // dev 模式
-            this.llamaServerPath = this.findLlamaServerExe(devResourcesDir) || join(devResourcesDir, 'llama-server.exe')
-            log(`llama-server 路径（dev）: ${this.llamaServerPath}`)
-        } else {
-            // 打包后
-            this.llamaServerPath = this.findLlamaServerExe(packedResourcesDir) || join(packedResourcesDir, 'llama-server.exe')
-            log(`llama-server 路径（prod）: ${this.llamaServerPath}`)
-        }
+        // 自动检测：dev 模式用 dev 路径，打包后用 prod 路径
+        const resourcesDir = existsSync(devResourcesDir) ? devResourcesDir : packedResourcesDir
+        this.llamaServerPath = this.findLlamaServerExe(resourcesDir) || join(resourcesDir, 'llama-server.exe')
+        log(`llama-server 路径: ${this.llamaServerPath}`)
         // 扫描查找 Qwen GGUF 模型文件
         this.modelPath = this.findModelFile('Qwen3', '.gguf') || ''
 
@@ -273,16 +271,12 @@ export class ServerManager {
         // -c: 上下文窗口大小
         // --port: HTTP 端口
         // -ngl: GPU 层数（0=仅CPU，99=尽量用GPU）
-        // --embedding: 启用 embedding 模型
         // --host: 监听地址
         const args = [
             '-m', this.modelPath,
             '-c', '4096',
             '--port', String(this.port),
             '-ngl', this.gpuAvailable ? '99' : '0',
-            // '--embedding', this.embeddingPath,
-            // '--pooling', 'cls',  // BEG 必须加这个参数，否则向量效果很差
-            '--embedding',
             '--host', '127.0.0.1'
         ]
         // 启动子进程
@@ -426,46 +420,6 @@ export class ServerManager {
             });
         });
     }
-
-    // private async cloneWithProgress(
-    //     win: BrowserWindow,
-    //     label: 'model' | 'embedding',
-    //     current: number,
-    //     total: number
-    // ) {
-    //     // 根据 label 选择对应的仓库 URL
-    //     const repoUrl = label === 'model'
-    //         ? 'https://www.modelscope.cn/Qwen/Qwen3-4B-GGUF.git'
-    //         : 'https://huggingface.co/CompendiumLabs/bge-small-zh-v1.5-gguf'
-    //
-    //     const fileName = label === 'model' ? this.MODEL_FILE : this.EMBEDDING_FILE
-    //
-    //     log(`开始下载 ${label}: ${repoUrl}`)
-    //
-    //     await git.clone({
-    //         fs,
-    //         http,
-    //         dir: this.modelsDir,
-    //         url: repoUrl,
-    //         onProgress: (progress) => {
-    //             let percent = 0
-    //             if (progress.total) {
-    //                 percent = Math.round((progress.loaded / progress.total) * 100)
-    //             }
-    //
-    //             win.webContents.send('server:download-progress', {
-    //                 percent,
-    //                 speed: '',
-    //                 phase: label,
-    //                 fileName,
-    //                 current,
-    //                 total
-    //             })
-    //         }
-    //     })
-    //
-    //     log(`${label} 下载完成`)
-    // }
 
     /** 格式化下载速度 */
     // private formatSpeed(bytes: number, startTime: number): string {
