@@ -4,6 +4,8 @@ out
 llama-server
 bge-small-zh-v1.5-gguf
 docs
+CLAUDE.md
+CONTRIBUTING.md
 .idea
 .*
 .DS_Store
