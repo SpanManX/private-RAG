@@ -39,9 +39,9 @@ export class EmbeddingServerManager {
         console.log(`[Embedding] process.resourcesPath = ${process.resourcesPath}`)
 
         // dev 模式：app.getAppPath() 直接返回项目根目录
-        const devResourcesDir = join(app.getAppPath(), 'resources', 'llama-server-GPU')
+        const devResourcesDir = join(app.getAppPath(), 'resources', 'llama-server')
         // 打包后
-        const packedResourcesDir = join(process.resourcesPath!, 'app.asar.unpacked', 'resources', 'llama-server-GPU')
+        const packedResourcesDir = join(process.resourcesPath!, 'app.asar.unpacked', 'resources', 'llama-server')
 
         console.log(`[Embedding] devResourcesDir = ${devResourcesDir}, exists: ${existsSync(devResourcesDir)}`)
         console.log(`[Embedding] packedResourcesDir = ${packedResourcesDir}, exists: ${existsSync(packedResourcesDir)}`)
