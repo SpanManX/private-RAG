@@ -45,9 +45,13 @@ export class EmbeddingServerManager extends LlamaServerBase {
      * bge 模型存放于 resources/bge-small-zh-v1.5-gguf/ 子目录下
      */
     private getBgeModelDir(): string {
-        const devModelDir = join(app.getAppPath(), 'resources', 'bge-small-zh-v1.5-gguf')
-        const packedModelDir = join(process.resourcesPath!, 'app.asar.unpacked', 'resources', 'bge-small-zh-v1.5-gguf')
-        return existsSync(devModelDir) ? devModelDir : packedModelDir
+        // 检测是否在打包环境中
+        const inAsar = app.getAppPath().includes('.asar')
+
+        if (inAsar) {
+            return join(process.resourcesPath!, 'app.asar.unpacked', 'resources', 'bge-small-zh-v1.5-gguf')
+        }
+        return join(app.getAppPath(), 'resources', 'bge-small-zh-v1.5-gguf')
     }
 
     /**
@@ -57,15 +61,13 @@ export class EmbeddingServerManager extends LlamaServerBase {
      */
     private findEmbeddingModel(): string {
         const modelDir = this.getBgeModelDir()
-        console.log(`[Embedding] modelDir = ${modelDir}, exists: ${existsSync(modelDir)}`)
 
         try {
             if (!existsSync(modelDir)) return ''
             const files = fs.readdirSync(modelDir)
             const modelFile = files.find((f) => f.endsWith('.gguf'))
             return modelFile ? join(modelDir, modelFile) : ''
-        } catch (e) {
-            console.log(`[Embedding] 读取模型目录失败: ${e}`)
+        } catch {
             return ''
         }
     }

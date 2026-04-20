@@ -30,7 +30,7 @@
 - **向量数据库 LanceDB** — 轻量、单文件、无依赖
 - **LLM llama.cpp** — Qwen3-4B GGUF 量化模型
 - **Embedding 向量化** — bge-small-zh-v1.5 中文本地模型
-- **GPU 加速** — 自动检测 NVIDIA CUDA，支持 GPU 推理
+- **GPU 加速** — 自动检测 NVIDIA CUDA，支持 GPU 推理（如无GPU则使用CPU）
 
 ---
 
@@ -46,16 +46,12 @@
 
 前往 [Releases](https://github.com/your-repo/releases) 下载最新版本：
 
-| 版本 | 文件 | 大小 | 说明 |
-|------|------|------|------|
-| Windows | `PriVec-Setup-x.x.x.exe` | ~150MB | 安装包 |
-
 ### 从源码运行
 
 ```bash
 # 克隆项目
-git clone https://github.com/your-repo/privec.git
-cd privec
+git clone https://github.com/SpanManX/private-RAG.git
+cd private-RAG
 
 # 安装依赖
 npm install
@@ -179,7 +175,7 @@ src/
 
 ## 配置说明
 
-模型文件默认存放在 `models/` 目录，首次启动会自动提示下载。
+模型文件默认存放在 `rag-models/` 目录，首次启动会自动提示下载。
 
 如需手动配置模型路径，可在设置页面修改。
 

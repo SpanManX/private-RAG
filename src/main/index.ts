@@ -100,10 +100,15 @@ function registerIpcHandlers(): void {
     ipcMain.handle('server:status', () => serverManager.getStatus())
     ipcMain.handle('embedding:status', () => serverManager.embeddingManager.getStatus())
     ipcMain.handle('server:start', async () => {
-        // 仅在用户点击“启动服务”时启动两个服务
-        await serverManager.start()
-        await serverManager.embeddingManager.start()
-        return serverManager.getStatus()
+        try {
+            // 仅在用户点击”启动服务”时启动两个服务
+            await serverManager.start()
+            await serverManager.embeddingManager.start()
+            return {success: true, status: serverManager.getStatus()}
+        } catch (error) {
+            log('启动服务失败:', error)
+            return {success: false, error: String(error), status: serverManager.getStatus()}
+        }
     })
     ipcMain.handle('server:stop', async () => {
         // 停止顺序：先 chat 服务，再 embedding 服务
@@ -133,11 +138,18 @@ function registerIpcHandlers(): void {
     // 导入单个文档：解析 → 分块 → 向量化 → 存储
     ipcMain.handle('document:import', async (_event, filePath: string) => {
         try {
-            if (serverManager.embeddingManager.getStatus().state !== 'running') {
-                return {success: false, error: 'Embedding service is not running. Please click "启动服务" first.'}
+            // 导入前检查两个服务是否都在运行
+            const chatStatus = serverManager.getStatus().state
+            const embedStatus = serverManager.embeddingManager.getStatus().state
+
+            if (chatStatus !== 'running') {
+                return {success: false, error: '对话服务未启动。请先点击"启动服务"。'}
             }
+            if (embedStatus !== 'running') {
+                return {success: false, error: 'Embedding 服务未启动。请先点击"启动服务"。'}
+            }
+
             const text = await documentProcessor.parse(filePath)
-            console.log(text, '单文件')
             const docId = await indexManager.addDocument(filePath, text)
             return {success: true, docId, textLength: text.length}
         } catch (error) {
@@ -321,6 +333,15 @@ app.whenReady().then(async () => {
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })
+})
+
+// 全局异常捕获，防止 Electron 弹出系统错误对话框
+process.on('uncaughtException', (error) => {
+    log(`[UncaughtException] ${error.message}\n${error.stack}`)
+})
+
+process.on('unhandledRejection', (reason) => {
+    log(`[UnhandledRejection] ${reason}`)
 })
 
 // 所有窗口关闭时退出应用（macOS 除外）

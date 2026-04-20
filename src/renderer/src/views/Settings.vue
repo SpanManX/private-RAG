@@ -53,7 +53,13 @@ async function startServer() {
   serverStatus.value = 'starting'
   statusMessage.value = '正在启动模型服务...'
   try {
-    await window.api.server.start()
+    const result = await window.api.server.start()
+    if (!result.success) {
+      globalError.showErrorMsg(result.error || '启动服务失败')
+      serverStatus.value = 'error'
+      statusMessage.value = result.error || '启动服务失败'
+      return
+    }
     await checkServerStatus()
   } catch (e) {
     globalError.showErrorMsg(String(e))

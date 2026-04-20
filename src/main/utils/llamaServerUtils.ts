@@ -11,15 +11,19 @@ import {app} from 'electron'
  *   示例：D:\GitHub\rag-knowledge-base\resources\
  * - 打包后（packed）：process.resourcesPath/app.asar.unpacked/resources/
  *   示例：C:\Users\xxx\AppData\...\resources\
- *
- * 优先使用开发路径，如果不存在则使用打包后的路径
  */
 export function getAppResourcesDir(): string {
-    // dev 模式：直接从项目根目录读取 resources
-    const devResourcesDir = join(app.getAppPath(), 'resources')
-    // 打包后：从 asar 包外部读取（electron-builder unpack 选项）
-    const packedResourcesDir = join(process.resourcesPath!, 'app.asar.unpacked', 'resources')
-    return existsSync(devResourcesDir) ? devResourcesDir : packedResourcesDir
+    // 检测是否在打包环境中
+    // asar 文件路径中会包含 .asar 或 app.asar
+    const inAsar = app.getAppPath().includes('.asar')
+
+    // 打包后用 process.resourcesPath
+    if (inAsar) {
+        return join(process.resourcesPath!, 'app.asar.unpacked', 'resources')
+    }
+
+    // 开发模式：直接从项目根目录读取 resources
+    return join(app.getAppPath(), 'resources')
 }
 
 /**
@@ -43,7 +47,6 @@ export function findLlamaServerExe(dir: string): string {
     if (!existsSync(dir)) return ''
     try {
         const files = fs.readdirSync(dir)
-        // 匹配 llama-server 开头且 .exe 结尾的文件
         const exe = files.find((f) =>
             f.startsWith('llama-server') && f.endsWith('.exe'))
         return exe ? join(dir, exe) : ''

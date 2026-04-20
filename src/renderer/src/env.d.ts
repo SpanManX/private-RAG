@@ -14,9 +14,21 @@ interface Window {
             status: () => Promise<{
                 state: 'idle' | 'starting' | 'running' | 'error';
                 message: string;
-                gpuAvailable?: boolean
+                gpuAvailable?: boolean;
+                modelName?: string;
+                modelPath?: string
             }>
-            start: () => Promise<void>
+            start: () => Promise<{
+                success: boolean;
+                error?: string;
+                status?: {
+                    state: 'idle' | 'starting' | 'running' | 'error';
+                    message: string;
+                    gpuAvailable?: boolean;
+                    modelName?: string;
+                    modelPath?: string
+                }
+            }>
             stop: () => Promise<void>
             downloadModel: () => Promise<void>
             cancelDownload: () => Promise<void>
@@ -79,6 +91,14 @@ interface Window {
         config: {
             getModelsDir: () => Promise<string>
             setModelsDir: (dir: string) => Promise<{ success: boolean }>
+        }
+        embedding: {
+            status: () => Promise<{
+                state: 'idle' | 'starting' | 'running' | 'error';
+                message: string;
+                gpuAvailable?: boolean;
+                modelName?: string
+            }>
         }
     }
 }

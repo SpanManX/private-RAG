@@ -12,8 +12,8 @@
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
-    "build:portable": "electron-builder --win portable",
-    "build:nsis": "electron-builder --win nsis",
+    "build:win:portable": "npm run build && electron-builder --win portable",
+    "build:win:nsis": "npm run build && electron-builder --win nsis",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web"

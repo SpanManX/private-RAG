@@ -13,6 +13,8 @@
 
 import {spawn, ChildProcess} from 'child_process'
 import {join} from 'path'
+import {existsSync} from 'fs'
+import {app} from 'electron'
 import {log} from '../logger'
 import {getModelsDir, setModelsDir} from '../store'
 import {detectGpu, waitForServer} from './serverUtils'
@@ -50,7 +52,6 @@ export abstract class LlamaServerBase {
 
     constructor() {
         this.gpuAvailable = detectGpu()
-        console.log(`GPU 可用性（检测）: ${this.gpuAvailable}`)
     }
 
     /**
@@ -162,22 +163,30 @@ export abstract class LlamaServerBase {
      * @param args - llama-server 命令行参数
      */
     protected spawnProcess(args: string[]): ChildProcess {
-        const process = spawn(this.llamaServerPath, args, {
-            stdio: ['ignore', 'pipe', 'pipe']
-        })
+        if (!existsSync(this.llamaServerPath)) {
+            throw new Error(`llama-server.exe 未找到: ${this.llamaServerPath}`)
+        }
 
-        process.stdout?.on('data', (data) => {
-            log(`[llama-server] ${data.toString().trim()}`)
-        })
-        process.stderr?.on('data', (data) => {
-            log(`[llama-server ERROR] ${data.toString().trim()}`)
-        })
+        try {
+            const process = spawn(this.llamaServerPath, args, {
+                stdio: ['ignore', 'pipe', 'pipe']
+            })
 
-        process.on('exit', (code) => {
-            log(`llama-server 已退出，代码: ${code}`)
-            this.process = null
-        })
+            process.stdout?.on('data', (data) => {
+                log(`[llama-server] ${data.toString().trim()}`)
+            })
+            process.stderr?.on('data', (data) => {
+                log(`[llama-server ERROR] ${data.toString().trim()}`)
+            })
 
-        return process
+            process.on('exit', (code) => {
+                log(`llama-server 已退出，代码: ${code}`)
+                this.process = null
+            })
+
+            return process
+        } catch (error) {
+            throw new Error(`启动 llama-server 失败: ${error}`)
+        }
     }
 }
