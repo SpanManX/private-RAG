@@ -1,7 +1,7 @@
 {
-  "name": "privec",
+  "name": "privrag",
   "version": "1.0.0",
-  "description": "PriVec - 私人文档向量知识库 | 纯本地 RAG 桌面应用",
+  "description": "PrivRAG - 私有 RAG 知识库 | 纯本地文档问答桌面应用",
   "main": "./out/main/index.js",
   "author": "",
   "license": "MIT",
@@ -12,6 +12,8 @@
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
+    "build:portable": "electron-builder --win portable",
+    "build:nsis": "electron-builder --win nsis",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web"

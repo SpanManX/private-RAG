@@ -307,7 +307,7 @@ function registerIpcHandlers(): void {
 app.whenReady().then(async () => {
     initLogger(join(app.getPath('userData'), 'logs', 'main.log'))
     log('App ready')
-    electronApp.setAppUserModelId('com.rag.knowledgebase')
+    electronApp.setAppUserModelId('com.privrag.app')
 
     app.on('browser-window-created', (_, window) => {
         optimizer.watchWindowShortcuts(window)

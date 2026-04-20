@@ -95,6 +95,7 @@ export class ServerManager extends LlamaServerBase {
             throw new Error(`llama-server.exe 未找到，请先从设置页面下载`)
         }
         if (!existsSync(this.modelPath)) {
+            console.log(this.modelPath)
             throw new Error(`模型文件未找到，请到设置页面下载模型`)
         }
 

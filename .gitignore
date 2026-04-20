@@ -2,8 +2,8 @@ node_modules
 dist
 out
 llama-server
-llama-server-GPU
 bge-small-zh-v1.5-gguf
+docs
 .idea
 .*
 .DS_Store

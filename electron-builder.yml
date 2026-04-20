@@ -1,5 +1,5 @@
-appId: com.privec.app
-productName: PriVec
+appId: com.privrag.app
+productName: PrivRAG
 directories:
   buildResources: build
 files:
@@ -17,9 +17,10 @@ asarUnpack:
   - "**/*.exe"
   - resources/**
 win:
-  executableName: PriVec
-  target:
-    - target: portable
+  executableName: PrivRAG
+#  target:
+#    - target: portable
+#    - target: nsis
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
