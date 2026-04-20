@@ -39,7 +39,15 @@ const renderedContent = computed(() => {
 
       <div class="content">
         <!-- 消息正文（Markdown 渲染） -->
-        <div :class="{text:message.role === 'user'}" v-html="renderedContent || '思考中...'"></div>
+        <!-- AI 思考中加载动画 -->
+        <div v-if="!renderedContent || renderedContent === ''" class="typing-indicator">
+          <div class="typing-bubble">
+            <span class="typing-dot"></span>
+            <span class="typing-dot"></span>
+            <span class="typing-dot"></span>
+          </div>
+        </div>
+        <div v-else :class="{text:message.role === 'user'}" v-html="renderedContent || '思考中...'"></div>
 
         <!-- 引用来源 -->
         <div v-if="message.citations && message.citations.length > 0" class="citations">
@@ -153,5 +161,63 @@ const renderedContent = computed(() => {
 
 .user .time {
   text-align: right;
+}
+
+/* AI 思考中加载动画 */
+.typing-indicator {
+  display: flex;
+  gap: 10px;
+  padding: 8px 0;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.typing-bubble {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 12px 16px;
+  //background: white;
+  border-radius: 12px;
+  //box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.typing-dot {
+  width: 8px;
+  height: 8px;
+  background: #9ca3af;
+  border-radius: 50%;
+  animation: bounce 1.4s ease-in-out infinite;
+}
+
+.typing-dot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.typing-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-6px);
+  }
 }
 </style>

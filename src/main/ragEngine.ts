@@ -58,7 +58,7 @@ export class RagEngine {
 
         // 合成上下文字符串
         const context = docs
-            .map((d, i) => `文件：${d.metadata.fileName}\n${d.pageContent}`)
+            .map((d) => `文件：${d.metadata.fileName}\n${d.pageContent}`)
             .join('\n\n')
 
         // 构建最终 prompt
@@ -67,13 +67,20 @@ ${context}
 
 问题：${question}`
 
-        // 构建引用来源
-        const citations: RagCitation[] = searchResults.map((r) => ({
-            docId: r.docId,
-            fileName: r.fileName,
-            score: r.score,
-            excerpt: r.chunkText.substring(0, 100) + '...'
-        }))
+        // 构建引用来源（按文档去重，每个文档只保留最高分的分块）
+        const citationMap = new Map<string, RagCitation>()
+        for (const r of searchResults) {
+            const existing = citationMap.get(r.docId)
+            if (!existing || r.score > existing.score) {
+                citationMap.set(r.docId, {
+                    docId: r.docId,
+                    fileName: r.fileName,
+                    score: r.score,
+                    excerpt: r.chunkText.substring(0, 100) + '...'
+                })
+            }
+        }
+        const citations = Array.from(citationMap.values())
 
         return {prompt, citations}
     }

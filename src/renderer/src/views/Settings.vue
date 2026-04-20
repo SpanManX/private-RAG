@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { onMounted, ref, onUnmounted } from 'vue'
 import { useDocumentStore } from '@/stores/documentStore'
+import { useGlobalErrorStore } from '@/stores/globalErrorStore'
 
 const documentStore = useDocumentStore()
+const globalError = useGlobalErrorStore()
 documentStore.refreshDocuments()
 
 const serverStatus = ref<'idle' | 'starting' | 'running' | 'error'>('idle')
@@ -10,9 +12,9 @@ const statusMessage = ref('')
 // const gpuAvailable = ref(false)
 const downloadProgress = ref({ percent: 0, speed: '', phase: '', fileName: '', current: 0, total: 2 })
 const isDownloading = ref(false)
-const errorMessage = ref('')
-const showError = ref(false)
 const modelsDir = ref('')
+const chatModelName = ref('')
+const embeddingModelName = ref('')
 let statusPollInterval: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
@@ -40,30 +42,31 @@ async function checkServerStatus() {
   const status = await window.api.server.status()
   serverStatus.value = status.state === 'running' ? 'running' : (status.state === 'error' ? 'error' : 'idle')
   statusMessage.value = status.message
-  // gpuAvailable.value = status.gpuAvailable ?? false
+  chatModelName.value = status.modelName || '未加载'
+
+  // 获取 embedding 状态
+  const embeddingStatus = await window.api.embedding.status()
+  embeddingModelName.value = embeddingStatus.modelName || '未加载'
 }
 
 async function startServer() {
-  clearError()
   serverStatus.value = 'starting'
   statusMessage.value = '正在启动模型服务...'
   try {
     await window.api.server.start()
     await checkServerStatus()
   } catch (e) {
-    showErrorMsg(String(e))
+    globalError.showErrorMsg(String(e))
     serverStatus.value = 'error'
   }
 }
 
 async function stopServer() {
-  clearError()
   await window.api.server.stop()
   await checkServerStatus()
 }
 
 async function downloadModel() {
-  clearError()
   isDownloading.value = true
   downloadProgress.value = { percent: 0, speed: '', phase: 'model', fileName: 'Qwen3-4B-Q5_K_M.gguf', current: 1, total: 2 }
   statusMessage.value = '正在下载模型...'
@@ -84,7 +87,7 @@ async function downloadModel() {
     if (String(e).includes('cancelled')) {
       statusMessage.value = '下载已取消'
     } else {
-      showErrorMsg(String(e))
+      globalError.showErrorMsg(String(e))
     }
     isDownloading.value = false
   }
@@ -107,19 +110,9 @@ async function selectModelsDir() {
       await window.api.config.setModelsDir(dir)
       modelsDir.value = dir
     } catch (e) {
-      showErrorMsg(String(e))
+      globalError.showErrorMsg(String(e))
     }
   }
-}
-
-function showErrorMsg(msg: string) {
-  errorMessage.value = msg
-  showError.value = true
-}
-
-function clearError() {
-  errorMessage.value = ''
-  showError.value = false
 }
 
 function getStatusLabel(): string {
@@ -139,12 +132,6 @@ function getStatusLabel(): string {
 <template>
   <div class="settings">
     <h1>设置</h1>
-
-    <!-- 错误提示 -->
-    <div v-if="showError" class="error-alert">
-      <span>{{ errorMessage }}</span>
-      <button class="error-close" @click="clearError">&times;</button>
-    </div>
 
     <!-- 模型服务状态 -->
     <section class="settings-section">
@@ -243,11 +230,11 @@ function getStatusLabel(): string {
       <div class="status-card">
         <div class="status-row">
           <span class="label">对话模型:</span>
-          <span class="value">Qwen3-1.5B-GGUF (Q4 量化)</span>
+          <span class="value">{{ chatModelName || '未加载' }}</span>
         </div>
         <div class="status-row">
           <span class="label">Embedding:</span>
-          <span class="value">bge-small-zh-v1.5</span>
+          <span class="value">{{ embeddingModelName || '未加载' }}</span>
         </div>
       </div>
     </section>
@@ -377,28 +364,6 @@ function getStatusLabel(): string {
 
 .btn-secondary:hover:not(:disabled) {
   background: #e5e7eb;
-}
-
-/* 新增错误提示 */
-.error-alert {
-  background: #fee2e2;
-  border: 1px solid #fecaca;
-  color: #dc2626;
-  padding: 12px 16px;
-  border-radius: 8px;
-  margin-bottom: 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.error-close {
-  background: none;
-  border: none;
-  font-size: 20px;
-  color: #dc2626;
-  cursor: pointer;
-  padding: 0 4px;
 }
 
 /* 新增 GPU 徽章 */

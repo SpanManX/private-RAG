@@ -1,0 +1,183 @@
+/**
+ * LlamaServer 抽象基类
+ *
+ * 职责：提取 ServerManager 和 EmbeddingServerManager 的公共逻辑
+ *
+ * 共享内容：
+ * - GPU 检测（构造函数中缓存结果）
+ * - llama-server 路径查找
+ * - 模型文件扫描（支持子目录嵌套搜索）
+ * - 进程启动/停止的公共模式
+ * - 目录配置管理（从 store 读取/写入）
+ */
+
+import {spawn, ChildProcess} from 'child_process'
+import {join} from 'path'
+import {log} from '../logger'
+import {getModelsDir, setModelsDir} from '../store'
+import {detectGpu, waitForServer} from './serverUtils'
+import {findLlamaServerExe, getLlamaServerDir} from './llamaServerUtils'
+import * as fs from 'fs'
+
+/** llama-server 服务状态 */
+export interface ServerStatus {
+    state: 'idle' | 'starting' | 'running' | 'error'
+    message: string
+    gpuAvailable?: boolean
+    /** 模型文件路径（可选） */
+    modelPath?: string
+    /** 模型文件名（可选） */
+    modelName?: string
+}
+
+/**
+ * llama-server 进程管理基类
+ *
+ * 子类需要实现：
+ * - start(): 启动服务
+ * - stop(): 停止服务
+ * - getStatus(): 获取服务状态
+ */
+export abstract class LlamaServerBase {
+    /** llama-server 子进程 */
+    protected process: ChildProcess | null = null
+    /** 模型文件存放目录（用户配置） */
+    protected modelsDir!: string
+    /** GPU 是否可用（检测一次，后续复用） */
+    protected gpuAvailable!: boolean
+    /** llama-server.exe 完整路径 */
+    protected llamaServerPath!: string
+
+    constructor() {
+        this.gpuAvailable = detectGpu()
+        console.log(`GPU 可用性（检测）: ${this.gpuAvailable}`)
+    }
+
+    /**
+     * 刷新模型路径
+     *
+     * 1. 从 store 获取用户配置的 modelsDir
+     * 2. 使用 llamaServerUtils 定位 llama-server.exe
+     * 3. 子类可覆盖以扫描各自的模型文件
+     */
+    protected async refreshPaths(): Promise<void> {
+        this.modelsDir = getModelsDir()
+        const llamaServerDir = getLlamaServerDir()
+        this.llamaServerPath = findLlamaServerExe(llamaServerDir) || join(llamaServerDir, 'llama-server.exe')
+        log(`llama-server 路径: ${this.llamaServerPath}`)
+    }
+
+    /**
+     * 扫描 modelsDir 及子目录，查找匹配的模型文件
+     *
+     * 搜索顺序：
+     * 1. 先遍历子目录（用户可能按模型名建了子文件夹）
+     * 2. 再搜索根目录
+     *
+     * @param prefix - 文件名前缀（如 'Qwen3'）
+     * @param ext - 文件扩展名（如 '.gguf'）
+     */
+    protected findModelFile(prefix: string, ext: string): string | null {
+        try {
+            const files = fs.readdirSync(this.modelsDir, {withFileTypes: true})
+            for (const dir of files) {
+                if (dir.isDirectory()) {
+                    const subDir = join(this.modelsDir, dir.name)
+                    const subFiles = fs.readdirSync(subDir)
+                    const match = subFiles.find((f: string) =>
+                        f.startsWith(prefix) && f.endsWith(ext))
+                    if (match) return join(subDir, match)
+                }
+            }
+            // 直接在 modelsDir 下查找
+            const rootFiles = fs.readdirSync(this.modelsDir)
+            const rootMatch = rootFiles.find((f: string) =>
+                f.startsWith(prefix) && f.endsWith(ext))
+            if (rootMatch) return join(this.modelsDir, rootMatch)
+        } catch {
+        }
+        return null
+    }
+
+    /** 获取当前模型目录 */
+    public getModelsDir(): string {
+        return this.modelsDir
+    }
+
+    /**
+     * 更新模型目录
+     *
+     * 会同时更新 store 中的持久化配置和内存中的路径缓存
+     */
+    public updateModelsDir(dir: string): void {
+        setModelsDir(dir)
+        this.refreshPaths()
+        log(`模型目录已更新: ${dir}`)
+    }
+
+    /**
+     * 检查文件是否存在且大小合理
+     *
+     * @param path - 文件路径
+     * @param minSize - 最小文件大小（字节），默认 1024，防止空文件
+     */
+    protected fileExists(path: string, minSize: number = 1024): boolean {
+        try {
+            const stats = fs.statSync(path)
+            return stats.size >= minSize
+        } catch {
+            return false
+        }
+    }
+
+    /**
+     * 等待服务就绪
+     *
+     * 轮询 HTTP 端口，直到服务响应或超时
+     *
+     * @param port - 服务端口
+     * @param timeout - 超时时间（毫秒）
+     */
+    protected async _waitForServer(port: number, timeout: number): Promise<void> {
+        await waitForServer(port, timeout)
+    }
+
+    /** 获取服务状态（子类实现） */
+    abstract getStatus(): ServerStatus
+
+    /** 启动服务（子类实现） */
+    abstract start(): Promise<void>
+
+    /** 停止服务（子类实现） */
+    abstract stop(): Promise<void>
+
+    /**
+     * 启动 llama-server 子进程
+     *
+     * 封装公共的进程创建和日志绑定逻辑：
+     * - 设置 stdio 管道
+     * - 绑定 stdout/stderr 日志输出
+     * - 监听进程退出事件并清理状态
+     *
+     * @param args - llama-server 命令行参数
+     */
+    protected spawnProcess(args: string[]): ChildProcess {
+        const process = spawn(this.llamaServerPath, args, {
+            stdio: ['ignore', 'pipe', 'pipe']
+        })
+
+        process.stdout?.on('data', (data) => {
+            log(`[llama-server] ${data.toString().trim()}`)
+        })
+        process.stderr?.on('data', (data) => {
+            log(`[llama-server ERROR] ${data.toString().trim()}`)
+        })
+
+        process.on('exit', (code) => {
+            log(`llama-server 已退出，代码: ${code}`)
+            this.process = null
+        })
+
+        return process
+    }
+}

@@ -1,5 +1,5 @@
-appId: com.rag.knowledgebase
-productName: RAG知识库
+appId: com.privec.app
+productName: PriVec
 directories:
   buildResources: build
 files:
@@ -17,7 +17,7 @@ asarUnpack:
   - "**/*.exe"
   - resources/**
 win:
-  executableName: rag-knowledge-base
+  executableName: PriVec
   target:
     - target: portable
 nsis:

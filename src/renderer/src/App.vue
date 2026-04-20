@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import Sidebar from '@/components/Sidebar.vue'
+import GlobalError from '@/components/GlobalError.vue'
 import { useDocumentStore } from '@/stores/documentStore'
 
 const documentStore = useDocumentStore()
@@ -11,6 +12,7 @@ onMounted(() => {
 
 <template>
   <div class="app-layout">
+    <GlobalError />
     <Sidebar />
     <main class="app-main">
       <RouterView />

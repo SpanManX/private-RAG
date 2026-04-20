@@ -46,7 +46,7 @@ function createWindow(): void {
             nodeIntegration: false     // 禁用 Node.js 集成
         }
     })
-
+    mainWindow.setMenu(null);
     // 窗口准备好后显示
     mainWindow.on('ready-to-show', () => {
         mainWindow.show()
@@ -81,8 +81,6 @@ async function initializeModules(): Promise<void> {
     indexManager = new IndexManager(userDataPath)
     ragEngine = new RagEngine(indexManager)
     await indexManager.initialize()  // 初始化 LanceDB 连接
-    // 初始化 embedding 服务路径（不自动启动，等用户点击按钮）
-    serverManager.embeddingManager.init()
     await serverManager.refreshPaths()
     log('Modules initialized')
 }
@@ -100,6 +98,7 @@ async function initializeModules(): Promise<void> {
 function registerIpcHandlers(): void {
     // -------- llama-server 服务管理 --------
     ipcMain.handle('server:status', () => serverManager.getStatus())
+    ipcMain.handle('embedding:status', () => serverManager.embeddingManager.getStatus())
     ipcMain.handle('server:start', async () => {
         // 仅在用户点击“启动服务”时启动两个服务
         await serverManager.start()
@@ -287,6 +286,14 @@ function registerIpcHandlers(): void {
             filters: [{name: 'Documents', extensions: ['pdf', 'docx', 'md', 'txt']}]
         })
         return result.filePaths
+    })
+
+    // -------- 全局错误提示 --------
+    ipcMain.on('show-global-error', (_event, error: string) => {
+        const win = BrowserWindow.getAllWindows()[0]
+        if (win) {
+            win.webContents.send('global:error', error)
+        }
     })
 
     log('IPC handlers registered')

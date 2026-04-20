@@ -1,187 +1,87 @@
 /**
- * llama-server 进程管理器
+ * llama-server 进程管理器（对话服务 8080）
  *
  * 职责：
  * 1. 启动/停止 llama-server 子进程
  * 2. 下载和管理 AI 模型文件
- * 3. 检测 GPU 可用性
- * 4. 提供 HTTP API 调用（generate / generateStream）
+ * 3. 提供对话生成 API
  *
- * llama-server 是 llama.cpp 的服务器版本，提供 HTTP 接口用于：
- * - 对话生成（/completion）
- * - Embedding 向量化（--embedding 参数）
+ * 继承 LlamaServerBase，共享公共逻辑
  */
 
-import {spawn, ChildProcess} from 'child_process'
-import {join} from 'path'
 import {existsSync, mkdirSync} from 'fs'
-import {app, BrowserWindow} from 'electron'
-// import http from 'http'
-// import https from 'https'
-// import AdmZip from 'adm-zip'
-// import git from 'isomorphic-git'
+import {BrowserWindow} from 'electron'
 import {log} from './logger'
-import {getModelsDir, setModelsDir} from './store'
-import * as fs from "node:fs";
-import axios from "axios";
-import path from "node:path";
-import {getCUDAInfo} from "./units/nvidiaUtil";
-import {EmbeddingServerManager} from "./units/embeddingServerManager";
-import {detectGpu, waitForServer} from "./units/serverUtils";
-import {findLlamaServerExe} from "./units/llamaServerUtils";
+import * as fs from 'node:fs'
+import axios from 'axios'
+import path from 'node:path'
+import {LlamaServerBase, ServerStatus} from './utils/llamaServerManager'
+import {EmbeddingServerManager} from './embeddingServerManager'
 
-/** llama-server 服务状态 */
-export interface ServerStatus {
-    state: 'idle' | 'starting' | 'running' | 'error'
-    message: string
-    gpuAvailable?: boolean   // GPU 是否可用（CUDA）
-}
-
-/** 模型下载进度 */
+/** 模型下载进度（IPC 事件发送） */
 export interface DownloadProgress {
-    percent: number         // 进度百分比 0-100
-    speed: string          // 下载速度字符串
-    phase: 'model' | 'embedding' | 'done'  // 当前阶段
-    fileName: string        // 当前下载的文件名
-    current: number        // 当前阶段编号 1-3
-    total: number           // 总阶段数
+    percent: number      // 进度 0-100
+    speed: string        // 下载速度
+    phase: 'model' | 'embedding' | 'done'
+    fileName: string     // 当前文件名
+    current: number      // 当前阶段
+    total: number       // 总阶段数
 }
 
-export class ServerManager {
-    private process: ChildProcess | null = null
-    private port = 8080                       // llama-server HTTP 端口
-    private modelPath!: string                 // Qwen 模型路径
-    // private _embeddingPath!: string              // Embedding 模型路径（预留）
-    private llamaServerPath!: string           // llama-server.exe 路径
-    private modelsDir!: string                 // 模型文件目录
+/**
+ * 对话服务管理器
+ *
+ * 管理 Qwen3-4B 对话模型，启动在 8080 端口的 llama-server 进程
+ * 同时持有 EmbeddingServerManager 实例，用于管理向量服务
+ */
+export class ServerManager extends LlamaServerBase {
+    /** 对话服务端口 */
+    private port = 8080
+    /** Qwen 模型文件路径 */
+    private modelPath!: string
+    /** 下载取消标记 */
     private cancellationToken: { cancelled: boolean } = {cancelled: false}
+    /** 是否正在下载 */
     private isDownloading = false
-    // 缓存 GPU 检测结果，避免每次查询时重复文件系统检查
-    private gpuAvailable: boolean
 
-    // embedding 服务管理器
+    /** embedding 服务管理器（独立进程） */
     public embeddingManager: EmbeddingServerManager
 
-    // ========== 模型下载地址配置 ==========
-    // llama-server: llama.cpp Windows x64 CPU 版本（ZIP 压缩包）
-    // private readonly LLAMA_SERVER_URL = 'https://github.com/ggml-org/llama.cpp/releases/download/b5482/llama-b5482-bin-win-cpu-x64.zip'
-    // Qwen3-1.7B 对话模型（GGUF 格式）
-    // private readonly MODEL_REPO = 'Qwen/Qwen3-1.7B-GGUF'
-    // private readonly MODEL_FILE = 'qwen3-1.7b-q4_k_m.gguf'
+    /** Qwen 模型文件名 */
     private readonly MODEL_FILE = 'Qwen3-4B-Q5_K_M.gguf'
-    // private readonly MODEL_FILE = 'Qwen3-1.7B-Q8_0.gguf'
-    // BGE 中文 embedding 模型（用于向量化查询文本和文档）
-    // private readonly EMBEDDING_FILE = 'bge-small-zh-v1.5-f16.gguf'
 
     constructor() {
-        this.gpuAvailable = detectGpu()
-        console.log(`GPU 可用性（检测）: ${this.gpuAvailable}`)
-        log(`GPU 可用性（缓存）: ${this.gpuAvailable}`)
+        super()
         this.embeddingManager = new EmbeddingServerManager()
         this.refreshPaths()
     }
 
-    /**
-     * 刷新模型路径
-     * 自动扫描 modelsDir 及其子目录，查找实际的模型文件
-     * 支持用户手动下载的模型（可能位于子目录中）
-     */
+    /** 刷新路径（覆盖父类，添加 Qwen 模型扫描） */
     async refreshPaths(): Promise<void> {
-        this.modelsDir = getModelsDir()
-
-        const gpuInfo = await getCUDAInfo();
-        if (gpuInfo.available) {
-            console.log(`检测到 GPU: ${gpuInfo.model}, CUDA 版本: ${gpuInfo.version}`);
-        } else {
-            console.warn('警告: 未检测到可用 GPU，将回退至 CPU 模式');
-        }
-
-        // dev 模式：app.getAppPath() 直接返回项目根目录
-        const devResourcesDir = join(app.getAppPath(), 'resources', 'llama-server-GPU')
-        // 打包后（asarUnpack）：解压到 app.asar.unpacked/resources/
-        const packedResourcesDir = join(process.resourcesPath!, 'app.asar.unpacked', 'resources', 'llama-server-GPU')
-
-        // 自动检测：dev 模式用 dev 路径，打包后用 prod 路径
-        const resourcesDir = existsSync(devResourcesDir) ? devResourcesDir : packedResourcesDir
-        this.llamaServerPath = findLlamaServerExe(resourcesDir) || join(resourcesDir, 'llama-server.exe')
-        log(`llama-server 路径: ${this.llamaServerPath}`)
-        // 扫描查找 Qwen GGUF 模型文件
+        await super.refreshPaths()
         this.modelPath = this.findModelFile('Qwen3', '.gguf') || ''
-
-        // 扫描查找 embedding 模型文件
-        // this._embeddingPath = this.findEmbeddingFile() || ''
+        log(`[ServerManager] 模型路径: ${this.modelPath}`)
     }
 
-    /**
-     * 扫描 modelsDir 及子目录，查找匹配的模型文件
-     * @param prefix 文件名前缀（如 'Qwen3'）
-     * @param ext 文件扩展名（如 '.gguf'）
-     */
-    private findModelFile(prefix: string, ext: string): string | null {
-        try {
-            const files = require('fs').readdirSync(this.modelsDir, {withFileTypes: true})
-            for (const dir of files) {
-                if (dir.isDirectory()) {
-                    const subDir = join(this.modelsDir, dir.name)
-                    const subFiles = require('fs').readdirSync(subDir)
-                    const match = subFiles.find((f: string) =>
-                        f.startsWith(prefix) && f.endsWith(ext))
-                    if (match) return join(subDir, match)
-                }
-            }
-            // 直接在 modelsDir 下查找
-            const rootFiles = require('fs').readdirSync(this.modelsDir)
-            const rootMatch = rootFiles.find((f: string) =>
-                f.startsWith(prefix) && f.endsWith(ext))
-            if (rootMatch) return join(this.modelsDir, rootMatch)
-        } catch {
-        }
-        return null
-    }
-
-    /** 获取当前模型目录 */
-    getModelsDir(): string {
-        return this.modelsDir
-    }
-
-    /** 更新模型目录并刷新路径 */
-    updateModelsDir(dir: string): void {
-        setModelsDir(dir)
-        this.refreshPaths()
-        log(`模型目录已更新: ${dir}`)
-    }
-
-    /** 获取服务状态 */
     getStatus(): ServerStatus {
-        if (!this.process) {
-            return {state: 'idle', message: 'Server not running', gpuAvailable: this.gpuAvailable}
-        }
-        return {state: 'running', message: `llama-server running on port ${this.port}`, gpuAvailable: this.gpuAvailable}
-    }
-
-    /** 检查文件是否存在且大小合理 */
-    private fileExists(path: string, minSize: number = 1024): boolean {
-        try {
-            const stats = {size: require('fs').statSync(path).size}
-            return stats.size >= minSize
-        } catch {
-            return false
-        }
-    }
-
-    /** 取消正在进行的下载 */
-    cancelDownload(): void {
-        if (this.isDownloading) {
-            this.cancellationToken.cancelled = true
-            log('下载已被用户取消')
+        const state: ServerStatus['state'] = this.process ? 'running' : 'idle'
+        return {
+            state,
+            message: this.process ? `llama-server running on port ${this.port}` : 'Server not running',
+            gpuAvailable: this.gpuAvailable,
+            modelPath: this.modelPath,
+            modelName: this.modelPath ? this.modelPath.split(/[/\\]/).pop() : undefined
         }
     }
 
     /**
-     * 启动 llama-server
-     * - 检查必需的文件是否存在
-     * - 启动子进程
-     * - 等待服务就绪
+     * 启动对话服务
+     *
+     * 启动参数：
+     * - -m: Qwen 模型路径
+     * - -c 4096: 上下文窗口大小
+     * - --port 8080: 对话服务端口
+     * - -ngl: GPU 层数（99=尽量用 GPU）
      */
     async start(): Promise<void> {
         if (this.process) {
@@ -189,22 +89,15 @@ export class ServerManager {
             return
         }
 
-        log(`GPU 可用性: ${this.gpuAvailable}`)
+        await this.refreshPaths()
 
-        // 检查必需文件
         if (!existsSync(this.llamaServerPath)) {
             throw new Error(`llama-server.exe 未找到，请先从设置页面下载`)
         }
         if (!existsSync(this.modelPath)) {
-            throw new Error(`模型文件未找到，请先从设置页面下载`)
+            throw new Error(`模型文件未找到，请到设置页面下载模型`)
         }
-        console.log('this.llamaServerPath:', this.llamaServerPath)
-        // 构建 llama-server 参数
-        // -m: 模型路径
-        // -c: 上下文窗口大小
-        // --port: HTTP 端口
-        // -ngl: GPU 层数（0=仅CPU，99=尽量用GPU）
-        // --host: 监听地址
+
         const args = [
             '-m', this.modelPath,
             '-c', '4096',
@@ -212,31 +105,13 @@ export class ServerManager {
             '-ngl', this.gpuAvailable ? '99' : '0',
             '--host', '127.0.0.1'
         ]
-        // 启动子进程
-        this.process = spawn(this.llamaServerPath, args, {
-            stdio: ['ignore', 'pipe', 'pipe']
-        })
 
-        // 捕获标准输出和错误
-        this.process.stdout?.on('data', (data) => {
-            log(`[llama-server] ${data.toString().trim()}`)
-        })
-        this.process.stderr?.on('data', (data) => {
-            log(`[llama-server ERROR] ${data.toString().trim()}`)
-        })
-
-        // 进程退出时清理
-        this.process.on('exit', (code) => {
-            log(`llama-server 已退出，代码: ${code}`)
-            this.process = null
-        })
-
-        // 等待服务就绪（最多 60 秒）
-        await waitForServer(this.port, 60000)
+        this.process = this.spawnProcess(args)
+        await this._waitForServer(this.port, 60000)
         log('llama-server 启动成功')
     }
 
-    /** 停止 llama-server */
+    /** 停止对话服务 */
     async stop(): Promise<void> {
         if (this.process) {
             this.process.kill()
@@ -245,9 +120,18 @@ export class ServerManager {
         }
     }
 
+    /** 取消正在进行的模型下载 */
+    cancelDownload(): void {
+        if (this.isDownloading) {
+            this.cancellationToken.cancelled = true
+            log('下载已被用户取消')
+        }
+    }
+
     /**
-     * 下载所有必需的模型文件
-     * 两阶段：Qwen 模型 → Embedding 模型（llama-server 打包进安装包）
+     * 下载模型文件
+     *
+     * 从 ModelScope 下载 Qwen3-4B-GGUF 模型
      * 进度通过 IPC 事件实时推送到渲染进程
      */
     async downloadModel(): Promise<void> {
@@ -262,7 +146,7 @@ export class ServerManager {
                 mkdirSync(this.modelsDir, {recursive: true})
             }
 
-            // ===== 阶段 1: 下载 Qwen3 模型 =====
+            // 检查文件是否已存在（至少 100MB）
             if (this.fileExists(this.modelPath, 100_000_000)) {
                 log(`模型文件已存在: ${this.modelPath}`)
                 win.webContents.send('server:download-progress', {
@@ -270,21 +154,9 @@ export class ServerManager {
                     fileName: this.MODEL_FILE, current: 1, total: 2
                 })
             } else {
-                //     await this.cloneWithProgress(win, 'model', 1, 2)
                 await this.downloadModelFile(win, 'model', 1, 2)
             }
 
-            // ===== 阶段 2: 下载 Embedding 模型 =====
-            // if (this.fileExists(this.embeddingPath, 10_000_000)) {
-            //     win.webContents.send('server:download-progress', {
-            //         percent: 100, speed: '已存在', phase: 'embedding',
-            //         fileName: this.EMBEDDING_FILE, current: 2, total: 2
-            //     })
-            // } else {
-            //     await this.cloneWithProgress(win, 'embedding', 2, 2)
-            // }
-
-            // 全部完成
             win.webContents.send('server:download-progress', {
                 percent: 100, speed: 'All files ready', phase: 'done',
                 fileName: '', current: 2, total: 2
@@ -294,72 +166,68 @@ export class ServerManager {
         }
     }
 
+    /**
+     * 从 ModelScope 下载模型文件
+     *
+     * 使用流式下载，边下载边发送进度
+     *
+     * @param win - Electron 窗口，用于发送 IPC 进度事件
+     * @param label - 下载阶段标签
+     * @param current - 当前阶段编号
+     * @param total - 总阶段数
+     */
     private async downloadModelFile(
         win: BrowserWindow,
         label: 'model' | 'embedding',
         current: number,
         total: number
     ) {
-        // 1. 定义具体的模型文件直链 (以 Qwen3-4B-GGUF 的 Q4_K_M 为例)
-        // const fileUrl = label === 'model'
-        //     ? 'https://modelscope.cn'
-        //     : '你的Embedding模型直链';
+        const fileName = this.MODEL_FILE
+        const destPath = path.join(this.modelsDir, fileName)
+        const baseUrl = 'https://modelscope.cn'
+        const repoPath = 'Qwen/Qwen3-4B-GGUF'
+        const fileUrl = `${baseUrl}/api/v1/models/${repoPath}/repo?Revision=master&FilePath=${fileName}`
 
-        const fileName = this.MODEL_FILE;
-        const destPath = path.join(this.modelsDir, fileName);
-        const baseUrl = "https://modelscope.cn";
-        const repoPath = `Qwen/Qwen3-4B-GGUF`;
-        const fileUrl = `${baseUrl}/api/v1/models/${repoPath}/repo?Revision=master&FilePath=${fileName}`;
+        log(`开始下载文件: ${fileName}`)
 
-        log(`开始下载文件: ${fileName}`);
-
-        const writer = fs.createWriteStream(destPath);
+        const writer = fs.createWriteStream(destPath)
 
         const response = await axios({
             url: fileUrl,
             method: 'GET',
             responseType: 'stream',
-            timeout: 0, // 关键：禁用超时
-        });
+            timeout: 0,  // 大文件下载不设置超时
+        })
 
-        const totalBytes = parseInt(response.headers['content-length'], 10);
-        let downloadedBytes = 0;
+        const totalBytes = parseInt(response.headers['content-length'], 10)
+        let downloadedBytes = 0
 
+        // 流式下载，进度实时推送
         response.data.on('data', (chunk: Buffer) => {
-            downloadedBytes += chunk.length;
-            const percent = Math.round((downloadedBytes / totalBytes) * 100);
+            downloadedBytes += chunk.length
+            const percent = Math.round((downloadedBytes / totalBytes) * 100)
 
-            // 发送进度到渲染进程
             win.webContents.send('server:download-progress', {
                 percent,
-                speed: '', // 可以根据时间计算下载速度
+                speed: '',
                 phase: label,
                 fileName,
                 current,
                 total
-            });
-        });
+            })
+        })
 
-        response.data.pipe(writer);
+        response.data.pipe(writer)
 
         return new Promise((resolve, reject) => {
             writer.on('finish', () => {
-                log(`${label} 下载完成`);
-                resolve(true);
-            });
+                log(`${label} 下载完成`)
+                resolve(true)
+            })
             writer.on('error', (err) => {
-                log(`${label} 下载失败: ${err.message}`);
-                reject(err);
-            });
-        });
+                log(`${label} 下载失败: ${err.message}`)
+                reject(err)
+            })
+        })
     }
-
-    /** 格式化下载速度 */
-    // private formatSpeed(bytes: number, startTime: number): string {
-    //     const elapsed = (Date.now() - startTime) / 1000
-    //     if (elapsed < 1) return '0 MB/s'
-    //     const speed = bytes / elapsed / (1024 * 1024)
-    //     return `${speed.toFixed(1)} MB/s`
-    // }
-
 }

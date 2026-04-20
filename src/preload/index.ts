@@ -41,6 +41,12 @@ const api = {
             ipcRenderer.on('server:download-progress', (_event, progress) => callback(progress))
     },
 
+    // -------- Embedding 服务管理 --------
+    embedding: {
+        /** 获取 Embedding 服务状态 */
+        status: () => ipcRenderer.invoke('embedding:status'),
+    },
+
     // -------- 文档管理 --------
     document: {
         /** 导入单个文档 */
@@ -95,6 +101,12 @@ const api = {
         getModelsDir: () => ipcRenderer.invoke('config:get-models-dir'),
         /** 设置模型目录路径 */
         setModelsDir: (dir: string) => ipcRenderer.invoke('config:set-models-dir', dir)
+    },
+
+    // -------- 全局错误提示 --------
+    showError: (error: string) => ipcRenderer.send('show-global-error', error),
+    onGlobalError: (callback: (error: string) => void) => {
+        ipcRenderer.on('global:error', (_event, error) => callback(error))
     }
 }
 
