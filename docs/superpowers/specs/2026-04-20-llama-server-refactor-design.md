@@ -45,11 +45,11 @@ LlamaServerBase（抽象基类）
 
 | 操作 | 文件 | 说明 |
 |------|------|------|
-| 新建 | `src/main/units/llamaServerManager.ts` | 抽象基类 LlamaServerBase |
+| 新建 | `src/main/utils/llamaServerManager.ts` | 抽象基类 LlamaServerBase |
 | 修改 | `src/main/serverManager.ts` | 继承 LlamaServerBase，保留独有逻辑 |
-| 修改 | `src/main/units/embeddingServerManager.ts` | 继承 LlamaServerBase，保留独有逻辑 |
-| 保留 | `src/main/units/serverUtils.ts` | 公共工具（waitForServer 等） |
-| 保留 | `src/main/units/llamaServerUtils.ts` | llama-server 路径查找 |
+| 修改 | `src/main/utils/embeddingServerManager.ts` | 继承 LlamaServerBase，保留独有逻辑 |
+| 保留 | `src/main/utils/serverUtils.ts` | 公共工具（waitForServer 等） |
+| 保留 | `src/main/utils/llamaServerUtils.ts` | llama-server 路径查找 |
 
 ## LlamaServerBase 公共接口
 
@@ -103,7 +103,7 @@ export abstract class LlamaServerBase {
 ## 进度
 
 - [x] 设计完成
-- [ ] 实现 LlamaServerBase 基类
-- [ ] 修改 ServerManager 继承基类
-- [ ] 修改 EmbeddingServerManager 继承基类
-- [ ] 验证构建和运行
+- [x] 实现 LlamaServerBase 基类
+- [x] 修改 ServerManager 继承基类
+- [x] 修改 EmbeddingServerManager 继承基类
+- [x] 验证构建和运行
