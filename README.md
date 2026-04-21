@@ -200,10 +200,22 @@ src/
 
 ## 配置说明
 
-模型文件默认存放在 `
-%USERPROFILE%\Documents\rag-models` 目录，首次启动会自动提示下载 **（不可使用中文目录）**。
+模型文件默认存放在 `%USERPROFILE%\Documents\rag-models` 目录，首次启动会自动提示下载 **（不可使用中文目录）**。
 
 如需手动配置模型路径，可在设置页面修改。
+
+---
+
+## 日志文件
+
+日志文件位于用户数据目录下：
+
+| 环境       | 日志路径 |
+|----------|---------|
+| Windows  | `%APPDATA%\PrivRAG\logs\main.log` |
+
+打开日志目录：
+- Windows: 资源管理器地址栏输入 `%APPDATA%\PrivRAG\logs`
 
 ---
 
