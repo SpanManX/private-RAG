@@ -49,7 +49,7 @@ export class EmbeddingServerManager extends LlamaServerBase {
         const inAsar = app.getAppPath().includes('.asar')
 
         if (inAsar) {
-            return join(process.resourcesPath!, 'app.asar.unpacked', 'resources', 'bge-small-zh-v1.5-gguf')
+            return join(process.resourcesPath!, 'resources', 'bge-small-zh-v1.5-gguf')
         }
         return join(app.getAppPath(), 'resources', 'bge-small-zh-v1.5-gguf')
     }

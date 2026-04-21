@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {computed} from 'vue'
 import MarkdownIt from 'markdown-it'
+import {useChatStore} from '@/stores/chatStore'
 import type {Message} from '@/stores/chatStore'
 
 // 创建 markdown-it 实例
@@ -12,8 +13,11 @@ const md = new MarkdownIt({
 })
 
 const props = defineProps<{
-  message: Message
+  message: Message,
+  isLastMsg:Boolean
 }>()
+
+const chatStore = useChatStore()
 
 function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString('zh-CN', {
@@ -26,6 +30,11 @@ function formatTime(timestamp: number): string {
 const renderedContent = computed(() => {
   if (!props.message.content) return ''
   return md.render(props.message.content)
+})
+
+// 是否显示加载动画：当前助手消息 + 无内容 + 正在生成
+const showLoading = computed(() => {
+  return props.message.role === 'assistant' && !renderedContent.value && chatStore.isGenerating
 })
 </script>
 
@@ -40,14 +49,14 @@ const renderedContent = computed(() => {
       <div class="content">
         <!-- 消息正文（Markdown 渲染） -->
         <!-- AI 思考中加载动画 -->
-        <div v-if="!renderedContent || renderedContent === ''" class="typing-indicator">
+        <div v-if="showLoading && isLastMsg && (!renderedContent || renderedContent === '')" class="typing-indicator">
           <div class="typing-bubble">
             <span class="typing-dot"></span>
             <span class="typing-dot"></span>
             <span class="typing-dot"></span>
           </div>
         </div>
-        <div v-else :class="{text:message.role === 'user'}" v-html="renderedContent || '思考中...'"></div>
+        <div v-else :class="{text:message.role === 'user'}" v-html="renderedContent"></div>
 
         <!-- 引用来源 -->
         <div v-if="message.citations && message.citations.length > 0" class="citations">

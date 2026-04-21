@@ -74,6 +74,10 @@ function createWindow(): BrowserWindow {
         }
     })
     mainWindow.setMenu(null);
+
+    // 禁用后台节流，避免窗口被遮挡时 SSE 流式更新暂停
+    mainWindow.webContents.setBackgroundThrottling(false)
+
     // 窗口准备好后显示
     mainWindow.on('ready-to-show', () => {
         mainWindow.show()

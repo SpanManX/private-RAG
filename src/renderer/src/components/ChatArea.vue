@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted, onUnmounted } from 'vue'
-import { useChatStore } from '@/stores/chatStore'
-import { useDocumentStore } from '@/stores/documentStore'
+import {ref, nextTick, onMounted, onUnmounted} from 'vue'
+import {useChatStore} from '@/stores/chatStore'
+import {useDocumentStore} from '@/stores/documentStore'
 import MessageBubble from './MessageBubble.vue'
 
 const chatStore = useChatStore()
@@ -25,7 +25,9 @@ async function handleSend(): Promise<void> {
 
   if (!documentStore.isServerRunning) {
     showOfflineTip.value = true
-    setTimeout(() => { showOfflineTip.value = false }, 3000)
+    setTimeout(() => {
+      showOfflineTip.value = false
+    }, 3000)
     return
   }
 
@@ -56,16 +58,16 @@ function handleKeydown(e: KeyboardEvent): void {
       <div class="welcome-icon">🔒</div>
       <h2 class="welcome-title">个人私密知识库</h2>
       <p class="welcome-desc">
-        导入您的文档，随时通过自然语言提问。<br />所有数据仅在本地处理，隐私安全。
+        导入您的文档，随时通过自然语言提问。<br/>所有数据仅在本地处理，隐私安全。
       </p>
     </div>
 
     <!-- 消息列表 -->
     <div ref="chatContainer" class="messages">
       <MessageBubble
-        v-for="msg in chatStore.messages"
-        :key="msg.id"
-        :message="msg"
+          v-for="(msg, i) in chatStore.messages"
+          :is-last-msg="i === chatStore.messages.length - 1"
+          :message="msg"
       />
     </div>
 
@@ -77,27 +79,27 @@ function handleKeydown(e: KeyboardEvent): void {
     <!-- 输入区 -->
     <div class="input-area">
       <textarea
-        v-model="inputText"
-        class="input-box"
-        placeholder="输入问题，按 Enter 发送..."
-        rows="1"
-        :disabled="chatStore.isGenerating"
-        @keydown="handleKeydown"
+          v-model="inputText"
+          class="input-box"
+          placeholder="输入问题，按 Enter 发送..."
+          rows="1"
+          :disabled="chatStore.isGenerating"
+          @keydown="handleKeydown"
       />
       <!-- 停止按钮 -->
       <button
-        v-if="chatStore.isGenerating"
-        class="stop-btn"
-        @click="chatStore.stopGenerating()"
+          v-if="chatStore.isGenerating"
+          class="stop-btn"
+          @click="chatStore.stopGenerating()"
       >
         ⏹ 停止
       </button>
       <!-- 发送按钮 -->
       <button
-        v-else
-        class="send-btn"
-        :disabled="!inputText.trim() || chatStore.isGenerating"
-        @click="handleSend"
+          v-else
+          class="send-btn"
+          :disabled="!inputText.trim() || chatStore.isGenerating"
+          @click="handleSend"
       >
         发送
       </button>

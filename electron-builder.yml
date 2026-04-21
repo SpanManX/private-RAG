@@ -6,22 +6,26 @@ files:
   - out/**/*
   - package.json
   - node_modules/**/*
-  - resources/**/*
   - '!**/.vscode/*'
   - '!src/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+# extraResources 直接放到 process.resourcesPath/resources/，无需 .asar.unpacked
+extraResources:
+  - from: resources/
+    to: ./resources/
 asarUnpack:
   - "**/*.exe"
-  - resources/**
 win:
   executableName: PrivRAG
 #  target:
 #    - target: portable
 #    - target: nsis
 nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
