@@ -12,6 +12,7 @@
 
 import {contextBridge, ipcRenderer} from 'electron'
 import {electronAPI} from '@electron-toolkit/preload'
+import IpcRendererEvent = Electron.IpcRendererEvent;
 
 // ============================================
 // API 定义 - 暴露给渲染进程
@@ -77,9 +78,6 @@ const api = {
         /** 流式查询：返回 prompt 和 citations */
         queryStream: (question: string) => ipcRenderer.invoke('rag:query-stream', question),
         systemTemplate: () => ipcRenderer.invoke('rag:system-template'),
-        /** 监听流式响应片段（已弃用，使用 fetch-event-source） */
-        onChunk: (callback: (chunk: string) => void) =>
-            ipcRenderer.on('rag:chunk', (_event, chunk) => callback(chunk)),
         /** 监听流式响应结束 */
         onEnd: (callback: () => void) => ipcRenderer.once('rag:end', () => callback()),
         /** 监听流式响应错误 */
@@ -104,9 +102,11 @@ const api = {
     },
 
     // -------- 全局错误提示 --------
-    showError: (error: string) => ipcRenderer.send('show-global-error', error),
-    onGlobalError: (callback: (error: string) => void) => {
-        ipcRenderer.on('global:error', (_event, error) => callback(error))
+    onGlobalError: (callback: any) => {
+        console.log('注册全局错误监听');
+        // 先移除之前的监听器，防止多次触发重复弹窗
+        ipcRenderer.removeAllListeners('onGlobalError');
+        ipcRenderer.on('global:error', (_event: IpcRendererEvent, message: string) => callback(message));
     }
 }
 

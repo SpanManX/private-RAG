@@ -30,7 +30,7 @@ let ragEngine: RagEngine
  * - 启用 contextIsolation 保护安全
  * - preload 脚本用于 IPC 通信
  */
-function createWindow(): void {
+function createWindow(): BrowserWindow {
     const mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
@@ -65,6 +65,7 @@ function createWindow(): void {
     } else {
         mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
     }
+    return mainWindow
 }
 
 /**
@@ -95,7 +96,7 @@ async function initializeModules(): Promise<void> {
  * - dialog:* - 文件对话框
  * - config:* - 配置管理
  */
-function registerIpcHandlers(): void {
+function registerIpcHandlers(mainWindow: BrowserWindow): void {
     // -------- llama-server 服务管理 --------
     ipcMain.handle('server:status', () => serverManager.getStatus())
     ipcMain.handle('embedding:status', () => serverManager.embeddingManager.getStatus())
@@ -107,6 +108,7 @@ function registerIpcHandlers(): void {
             return {success: true, status: serverManager.getStatus()}
         } catch (error) {
             log('启动服务失败:', error)
+            mainWindow.webContents.send('global:error', String(error))
             return {success: false, error: String(error), status: serverManager.getStatus()}
         }
     })
@@ -261,17 +263,6 @@ function registerIpcHandlers(): void {
         indexManager.deleteDocument(docId)
     )
 
-    // -------- RAG 问答 --------
-    // 非流式查询：搜索 → 构建 prompt → 调用 llama-server → 返回结果
-    // ipcMain.handle('rag:query', async (_event, question: string) => {
-    //     try {
-    //         return await ragEngine.query(question)
-    //     } catch (error) {
-    //         log('RAG query error:', error)
-    //         return {success: false, error: String(error)}
-    //     }
-    // })
-
     // 流式查询：返回 prompt 和引用，让前端使用 fetch-event-source 调用 llama-server
     ipcMain.handle('rag:query-stream', async (_event, question: string) => {
         try {
@@ -299,16 +290,6 @@ function registerIpcHandlers(): void {
         })
         return result.filePaths
     })
-
-    // -------- 全局错误提示 --------
-    ipcMain.on('show-global-error', (_event, error: string) => {
-        const win = BrowserWindow.getAllWindows()[0]
-        if (win) {
-            win.webContents.send('global:error', error)
-        }
-    })
-
-    log('IPC handlers registered')
 }
 
 // ============================================
@@ -326,22 +307,13 @@ app.whenReady().then(async () => {
     })
 
     await initializeModules()
-    registerIpcHandlers()
-    createWindow()
+    const mainWindow = createWindow()
+    registerIpcHandlers(mainWindow)
 
     // macOS：点击 Dock 图标时重建窗口
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })
-})
-
-// 全局异常捕获，防止 Electron 弹出系统错误对话框
-process.on('uncaughtException', (error) => {
-    log(`[UncaughtException] ${error.message}\n${error.stack}`)
-})
-
-process.on('unhandledRejection', (reason) => {
-    log(`[UnhandledRejection] ${reason}`)
 })
 
 // 所有窗口关闭时退出应用（macOS 除外）

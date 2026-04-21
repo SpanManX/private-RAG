@@ -5,6 +5,7 @@ import DocList from './DocList.vue'
 import FileUploader from './FileUploader.vue'
 
 const route = useRoute()
+
 const serverStatus = ref<'idle' | 'starting' | 'running' | 'error'>('idle')
 const statusMessage = ref('')
 const gpuAvailable = ref(false)
@@ -45,7 +46,7 @@ async function toggleServer() {
     statusMessage.value = '正在启动...'
     try {
       await window.api.server.start()
-    } catch (e) {
+    } catch (e: any) {
       statusMessage.value = '启动失败'
       serverStatus.value = 'error'
     }
@@ -73,9 +74,9 @@ function getStatusLabel(): string {
       <!-- 服务状态卡片 -->
       <div class="server-card" :class="serverStatus">
         <div class="server-header">
-<!--          <div class="server-indicator">-->
+          <!--          <div class="server-indicator">-->
           <div class="indicator-dot">
-<!--            <span class="indicator-dot"></span>-->
+            <!--            <span class="indicator-dot"></span>-->
             <span class="indicator-pulse" v-if="serverStatus === 'running'"></span>
           </div>
           <div class="server-info">
@@ -85,7 +86,12 @@ function getStatusLabel(): string {
           <div class="gpu-chip">
             <div :class="gpuAvailable ? 'gpu-ok' : 'gpu-none'">
               <span class="gpu-dot"></span>
-              GPU:{{ gpuAvailable ? '可用' : '不可用' }}
+              <template v-if="gpuAvailable">
+                GPU Mode
+              </template>
+              <template v-else>
+                CPU Mode
+              </template>
             </div>
           </div>
         </div>

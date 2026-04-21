@@ -10,6 +10,7 @@ declare module '*.vue' {
 interface Window {
     electron: typeof import('@electron-toolkit/preload').electronAPI
     api: {
+        onGlobalError: (callback: (errorMsg: string) => void) => void;
         server: {
             status: () => Promise<{
                 state: 'idle' | 'starting' | 'running' | 'error';
@@ -80,7 +81,6 @@ interface Window {
                 error?: string
             }>
             systemTemplate: () => Promise<{ role: string, content: string }>,
-            onChunk: (callback: (chunk: string) => void) => void
             onEnd: (callback: () => void) => void
             onError: (callback: (error: string) => void) => void
         }

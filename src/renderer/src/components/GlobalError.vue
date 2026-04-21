@@ -2,6 +2,11 @@
 import {useGlobalErrorStore} from '@/stores/globalErrorStore'
 
 const globalError = useGlobalErrorStore()
+
+// 监听主进程发送的全局错误
+window.api.onGlobalError((errorMsg) => {
+  globalError.showErrorMsg(errorMsg)
+});
 </script>
 
 <template>

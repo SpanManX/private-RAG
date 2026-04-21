@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref, onUnmounted } from 'vue'
-import { useDocumentStore } from '@/stores/documentStore'
-import { useGlobalErrorStore } from '@/stores/globalErrorStore'
+import {onMounted, ref, onUnmounted} from 'vue'
+import {useDocumentStore} from '@/stores/documentStore'
+import {useGlobalErrorStore} from '@/stores/globalErrorStore'
 
 const documentStore = useDocumentStore()
 const globalError = useGlobalErrorStore()
@@ -10,7 +10,7 @@ documentStore.refreshDocuments()
 const serverStatus = ref<'idle' | 'starting' | 'running' | 'error'>('idle')
 const statusMessage = ref('')
 // const gpuAvailable = ref(false)
-const downloadProgress = ref({ percent: 0, speed: '', phase: '', fileName: '', current: 0, total: 2 })
+const downloadProgress = ref({percent: 0, speed: '', phase: '', fileName: '', current: 0, total: 2})
 const isDownloading = ref(false)
 const modelsDir = ref('')
 const chatModelName = ref('')
@@ -55,14 +55,12 @@ async function startServer() {
   try {
     const result = await window.api.server.start()
     if (!result.success) {
-      globalError.showErrorMsg(result.error || '启动服务失败')
       serverStatus.value = 'error'
       statusMessage.value = result.error || '启动服务失败'
       return
     }
     await checkServerStatus()
   } catch (e) {
-    globalError.showErrorMsg(String(e))
     serverStatus.value = 'error'
   }
 }
@@ -74,7 +72,14 @@ async function stopServer() {
 
 async function downloadModel() {
   isDownloading.value = true
-  downloadProgress.value = { percent: 0, speed: '', phase: 'model', fileName: 'Qwen3-4B-Q5_K_M.gguf', current: 1, total: 2 }
+  downloadProgress.value = {
+    percent: 0,
+    speed: '',
+    phase: 'model',
+    fileName: 'Qwen3-4B-Q5_K_M.gguf',
+    current: 1,
+    total: 2
+  }
   statusMessage.value = '正在下载模型...'
 
   window.api.server.onDownloadProgress((progress) => {
@@ -83,7 +88,8 @@ async function downloadModel() {
       statusMessage.value = '所有文件已就绪'
       isDownloading.value = false
     } else {
-      statusMessage.value = `下载中: ${progress.fileName} - ${progress.percent}%`
+      // statusMessage.value = `下载中: ${progress.fileName} - ${progress.percent}%`
+      statusMessage.value = `下载中...`
     }
   })
 
@@ -146,9 +152,9 @@ function getStatusLabel(): string {
         <div class="status-row">
           <span class="label">状态:</span>
           <span class="status-badge" :class="serverStatus">{{ getStatusLabel() }}</span>
-<!--          <span class="gpu-badge" :class="gpuAvailable ? 'gpu-ok' : 'gpu-none'">-->
-<!--            GPU: {{ gpuAvailable ? '可用' : '不可用' }}-->
-<!--          </span>-->
+          <!--          <span class="gpu-badge" :class="gpuAvailable ? 'gpu-ok' : 'gpu-none'">-->
+          <!--            GPU: {{ gpuAvailable ? '可用' : '不可用' }}-->
+          <!--          </span>-->
         </div>
         <div class="status-row">
           <span class="label">信息:</span>
@@ -156,17 +162,17 @@ function getStatusLabel(): string {
         </div>
         <div class="actions">
           <button
-            v-if="serverStatus === 'running'"
-            class="btn btn-danger"
-            @click="stopServer"
+              v-if="serverStatus === 'running'"
+              class="btn btn-danger"
+              @click="stopServer"
           >
             停止服务
           </button>
           <button
-            v-else
-            class="btn btn-primary"
-            :disabled="serverStatus === 'starting'"
-            @click="startServer"
+              v-else
+              class="btn btn-primary"
+              :disabled="serverStatus === 'starting'"
+              @click="startServer"
           >
             启动服务
           </button>
@@ -182,9 +188,9 @@ function getStatusLabel(): string {
           <span class="label">下载目录:</span>
           <span class="value models-dir-path">{{ modelsDir }}</span>
           <button
-            class="btn btn-small"
-            :disabled="isDownloading"
-            @click="selectModelsDir"
+              class="btn btn-small"
+              :disabled="isDownloading"
+              @click="selectModelsDir"
           >
             更改
           </button>
@@ -208,9 +214,9 @@ function getStatusLabel(): string {
         <div v-else class="download-idle">
           <div class="actions">
             <button
-              class="btn btn-secondary"
-              :disabled="serverStatus === 'starting'"
-              @click="downloadModel"
+                class="btn btn-secondary"
+                :disabled="serverStatus === 'starting'"
+                @click="downloadModel"
             >
               下载模型
             </button>
@@ -393,6 +399,7 @@ function getStatusLabel(): string {
   color: #374151;
   margin-bottom: 8px;
 }
+
 .download-meta {
   display: flex;
   justify-content: space-between;
@@ -406,13 +413,16 @@ function getStatusLabel(): string {
   background: #dc2626;
   color: white;
 }
+
 .btn-danger:hover:not(:disabled) {
   background: #b91c1c;
 }
+
 .btn-warning {
   background: #f59e0b;
   color: white;
 }
+
 .btn-warning:hover:not(:disabled) {
   background: #d97706;
 }
@@ -424,6 +434,7 @@ function getStatusLabel(): string {
   background: #e5e7eb;
   color: #374151;
 }
+
 .btn-small:hover:not(:disabled) {
   background: #d1d5db;
 }

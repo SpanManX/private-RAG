@@ -154,21 +154,41 @@ npm run build:win
 
 ```
 src/
-├── main/                        # Electron 主进程
-│   ├── index.ts                 # 入口、窗口、IPC 注册
-│   ├── serverManager.ts          # 对话服务 (8080端口)
-│   ├── embeddingServerManager.ts # 向量服务 (8081端口)
-│   ├── documentProcessor.ts      # 文档解析
-│   ├── indexManager.ts          # LanceDB 索引管理
-│   ├── ragEngine.ts             # RAG 编排
-│   ├── langchain/embeddings.ts # LangChain Embeddings 封装
-│   └── utils/                   # 公共工具
-├── preload/                     # 上下文桥接
-└── renderer/                    # Vue 3 前端
+├── main/                           # Electron 主进程
+│   ├── index.ts                    # 入口、窗口创建、IPC 注册
+│   ├── serverManager.ts            # 对话服务管理器 (llama-server 8080)
+│   ├── embeddingServerManager.ts   # 向量服务管理器 (llama-server 8081)
+│   ├── documentProcessor.ts         # 文档解析 (PDF/DOCX/MD/TXT)
+│   ├── indexManager.ts             # LanceDB 索引管理
+│   ├── ragEngine.ts                # RAG 编排引擎
+│   ├── logger.ts                   # 日志工具
+│   ├── store.ts                    # electron-store 持久化配置
+│   ├── langchain/
+│   │   └── embeddings.ts           # LangChain Embeddings 封装
+│   └── utils/
+│       ├── llamaServerUtils.ts     # llama-server 路径查找
+│       ├── nvidiaUtil.ts           # CUDA/GPU 检测
+│       └── serverUtils.ts         # 服务工具 (waitForServer)
+├── preload/
+│   └── index.ts                    # 上下文桥接 (contextBridge)
+└── renderer/                       # Vue 3 前端
     └── src/
-        ├── components/           # UI 组件
-        ├── views/               # 页面
-        └── stores/              # Pinia 状态
+        ├── main.ts                 # 前端入口
+        ├── App.vue                 # 根组件
+        ├── router.ts               # Vue Router 路由
+        ├── components/
+        │   ├── Sidebar.vue         # 侧边栏 (服务状态卡片)
+        │   ├── ChatArea.vue         # 聊天区域
+        │   ├── MessageBubble.vue    # 消息气泡
+        │   ├── DocList.vue          # 文档列表
+        │   └── FileUploader.vue     # 文件上传
+        ├── views/
+        │   ├── ChatView.vue         # 对话页面
+        │   └── SettingsView.vue     # 设置页面
+        └── stores/
+            ├── chatStore.ts        # 聊天状态 (SSE 流式请求)
+            ├── documentStore.ts    # 文档状态
+            └── globalErrorStore.ts # 全局错误提示
 ```
 
 ---

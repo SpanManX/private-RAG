@@ -38,13 +38,6 @@ export const useGlobalErrorStore = defineStore('globalError', () => {
         }
     }
 
-    // 监听主进程发送的全局错误
-    if (typeof window !== 'undefined' && (window as any).api) {
-        ;(window as any).api.onGlobalError((error: string) => {
-            showErrorMsg(error, 8000)
-        })
-    }
-
     return {
         errorMessage,
         showError,

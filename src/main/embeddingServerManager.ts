@@ -14,7 +14,7 @@ import {existsSync} from 'fs'
 import {app} from 'electron'
 import {log} from './logger'
 import * as fs from 'fs'
-import {LlamaServerBase, ServerStatus} from './llamaServerManager'
+import {LlamaServerBase, ServerStatus} from './llamaServerBase'
 
 /** embedding 服务状态（供外部使用） */
 export interface EmbeddingServerStatus {

@@ -35,6 +35,15 @@ export interface DocumentRecord {
     textLength: number  // 原始文本长度
 }
 
+type ChunkRecord = {
+    id: string
+    docId: string
+    fileName: string
+    chunkIndex: number
+    chunkText: string
+    vector: number[]
+}
+
 /** 每个 chunk 的大小（字符数） */
 const CHUNK_SIZE = 512
 const TABLE_NAME = 'chunks'
@@ -88,6 +97,10 @@ export class IndexManager {
         log(`LanceDB 初始化完成: ${dbPath}`)
     }
 
+    /**
+     * 构建 LanceDB 表的 Schema
+     * @param embeddingDim 向量维度
+     */
     private buildSchema(embeddingDim: number): Schema {
         return new Schema([
             new Field('id', new Utf8()),
@@ -99,12 +112,20 @@ export class IndexManager {
         ])
     }
 
+    /**
+     * 计算 IVF_PQ 索引的子向量数量
+     * 子向量维度通常为 16 或 8 的倍数，以获得最佳性能
+     */
     private recommendedNumSubVectors(dim: number): number {
         if (dim % 16 === 0) return Math.max(1, dim / 16)
         if (dim % 8 === 0) return Math.max(1, dim / 8)
         return 1
     }
 
+    /**
+     * 创建 chunks 表
+     * @param embeddingDim 向量维度（由首个 embedding 决定）
+     */
     private async createChunksTable(embeddingDim: number): Promise<void> {
         const schema = this.buildSchema(embeddingDim)
         this.table = await this.db.createEmptyTable(TABLE_NAME, schema)
@@ -138,6 +159,11 @@ export class IndexManager {
         }
     }
 
+    /**
+     * 从表 Schema 中提取向量维度
+     * @param table LanceDB 表实例
+     * @returns 向量维度，或 null 如果无法获取
+     */
     private async getTableVectorDimension(table: lancedb.Table): Promise<number | null> {
         const schema = await table.schema()
         const vectorField = schema.fields.find((f) => f.name === 'vector')
@@ -147,6 +173,11 @@ export class IndexManager {
         return vectorType.listSize
     }
 
+    /**
+     * 确保表已创建且维度匹配
+     * 如果表不存在或维度不匹配，会自动重建
+     * @param dim 期望的向量维度
+     */
     private async ensureTableForDimension(dim: number): Promise<void> {
         if (!this.table) {
             await this.createChunksTable(dim)
@@ -240,6 +271,12 @@ export class IndexManager {
         return chunks.filter((c) => c.length > 10)
     }
 
+    /**
+     * 验证 embedding 向量的有效性
+     * @param embedding 向量数组
+     * @param context 上下文信息（用于错误提示）
+     * @throws 如果向量无效（类型错误、维度不匹配、包含非有限值）
+     */
     private validateEmbeddingOrThrow(embedding: number[], context: string): number[] {
         if (!Array.isArray(embedding)) {
             throw new Error(`Invalid embedding type (${context})`)
@@ -259,6 +296,11 @@ export class IndexManager {
         return embedding
     }
 
+    /**
+     * 生成文本的 embedding 向量
+     * @param text 要向量化的文本
+     * @param context 上下文信息（用于错误提示）
+     */
     private async embedOrThrow(text: string, context: string): Promise<number[]> {
         const embedding = await this.embeddings.embedQuery(text)
         return this.validateEmbeddingOrThrow(embedding, context)
@@ -272,76 +314,12 @@ export class IndexManager {
      */
     async addDocument(filePath: string, text: string): Promise<string> {
         const docId = randomUUID()
-
-        // 提取文件名（去掉路径）
         const fileName = filePath.split(/[/\\]/).pop() ?? filePath
-
-        // 文本分块
         const chunks = this.chunkText(text)
-        if (chunks.length === 0) {
-            throw new Error(`No valid chunks generated for file: ${fileName}`)
-        }
 
-        // 为每个 chunk 生成向量
-        type ChunkRecord = {
-            id: string
-            docId: string
-            fileName: string
-            chunkIndex: number
-            chunkText: string
-            vector: number[]
-        }
-        const records: ChunkRecord[] = []
-        const firstEmbedding = await this.embedOrThrow(
-            chunks[0],
-            `doc=${docId}, file=${fileName}, chunk=0`
-        )
-        await this.ensureTableForDimension(firstEmbedding.length)
-        records.push({
-            id: randomUUID(),
-            docId,
-            fileName,
-            chunkIndex: 0,
-            chunkText: chunks[0],
-            vector: firstEmbedding
-        })
+        await this._processChunks(docId, fileName, chunks)
 
-        for (let i = 1; i < chunks.length; i++) {
-            const chunkText = chunks[i]
-            const embedding = await this.embedOrThrow(
-                chunkText,
-                `doc=${docId}, file=${fileName}, chunk=${i}`
-            )
-            records.push({
-                id: randomUUID(),
-                docId,
-                fileName,
-                chunkIndex: i,
-                chunkText,
-                vector: embedding
-            })
-        }
-
-        // 添加到 LanceDB
-        if (!this.table) {
-            throw new Error('Vector table is not initialized')
-        }
-        await this.table.add(records)
-
-        // 首次添加数据后建索引（需要数据才能训练 IVF_PQ）
-        if (!this.indexBuilt) {
-            this.indexBuilt = true
-            await this.buildVectorIndex()
-        }
-
-        // 更新内存缓存
-        this.docs.set(docId, {
-            id: docId,
-            fileName,
-            createdAt: Date.now(),
-            textLength: text.length
-        })
-
+        this.docs.set(docId, {id: docId, fileName, createdAt: Date.now(), textLength: text.length})
         log(`文档已索引: ${fileName}, ${chunks.length} 个块`)
         return docId
     }
@@ -351,7 +329,7 @@ export class IndexManager {
      * @param filePath 原始文件路径
      * @param text 解析后的纯文本
      * @param chunks 预分块的文本数组
-     * @param onChunkProgress 每处理完一个 chunk 调用的回调，参数为 chunk 索引
+     * @param onChunkProgress 每处理完一个 chunk 调用的回调
      * @returns 生成的文档 ID
      */
     async addDocumentWithProgress(
@@ -362,50 +340,38 @@ export class IndexManager {
     ): Promise<string> {
         const docId = randomUUID()
         const fileName = filePath.split(/[/\\]/).pop() ?? filePath
+
+        await this._processChunks(docId, fileName, chunks, onChunkProgress)
+
+        this.docs.set(docId, {id: docId, fileName, createdAt: Date.now(), textLength: text.length})
+        log(`文档已索引: ${fileName}, ${chunks.length} 个块`)
+        return docId
+    }
+
+    /**
+     * 公共逻辑：处理 chunk 向量化和存储
+     */
+    private async _processChunks(
+        docId: string,
+        fileName: string,
+        chunks: string[],
+        onChunkProgress?: (chunkIndex: number) => void
+    ): Promise<void> {
         if (chunks.length === 0) {
             throw new Error(`No valid chunks generated for file: ${fileName}`)
         }
 
-        type ChunkRecord = {
-            id: string
-            docId: string
-            fileName: string
-            chunkIndex: number
-            chunkText: string
-            vector: number[]
-        }
         const records: ChunkRecord[] = []
-        const firstEmbedding = await this.embedOrThrow(
-            chunks[0],
-            `doc=${docId}, file=${fileName}, chunk=0`
-        )
-        await this.ensureTableForDimension(firstEmbedding.length)
-        records.push({
-            id: randomUUID(),
-            docId,
-            fileName,
-            chunkIndex: 0,
-            chunkText: chunks[0],
-            vector: firstEmbedding
-        })
-        onChunkProgress(0)
 
-        for (let i = 1; i < chunks.length; i++) {
-            const chunkText = chunks[i]
-            const embedding = await this.embedOrThrow(
-                chunkText,
-                `doc=${docId}, file=${fileName}, chunk=${i}`
-            )
-            records.push({
-                id: randomUUID(),
-                docId,
-                fileName,
-                chunkIndex: i,
-                chunkText,
-                vector: embedding
-            })
+        for (let i = 0; i < chunks.length; i++) {
+            const embedding = await this.embedOrThrow(chunks[i], `doc=${docId}, file=${fileName}, chunk=${i}`)
 
-            onChunkProgress(i)
+            if (i === 0) {
+                await this.ensureTableForDimension(embedding.length)
+            }
+
+            records.push({id: randomUUID(), docId, fileName, chunkIndex: i, chunkText: chunks[i], vector: embedding})
+            onChunkProgress?.(i)
         }
 
         if (!this.table) {
@@ -413,21 +379,10 @@ export class IndexManager {
         }
         await this.table.add(records)
 
-        // 首次添加数据后建索引
         if (!this.indexBuilt) {
             this.indexBuilt = true
             await this.buildVectorIndex()
         }
-
-        this.docs.set(docId, {
-            id: docId,
-            fileName,
-            createdAt: Date.now(),
-            textLength: text.length
-        })
-
-        log(`文档已索引: ${fileName}, ${chunks.length} 个块`)
-        return docId
     }
 
     /**

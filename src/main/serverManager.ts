@@ -15,7 +15,7 @@ import {log} from './logger'
 import * as fs from 'node:fs'
 import axios from 'axios'
 import path from 'node:path'
-import {LlamaServerBase, ServerStatus} from './llamaServerManager'
+import {LlamaServerBase, ServerStatus} from './llamaServerBase'
 import {EmbeddingServerManager} from './embeddingServerManager'
 
 /** 模型下载进度（IPC 事件发送） */
