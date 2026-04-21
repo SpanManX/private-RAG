@@ -11,12 +11,10 @@
 import {spawn} from 'child_process'
 import {join} from 'path'
 import {existsSync} from 'fs'
-// import {app} from 'electron'
 import {log} from './logger'
 import * as fs from 'fs'
 import {LlamaServerBase, ServerStatus} from './llamaServerBase'
-// import path from "node:path";
-import {getAppResourcesDir} from "./utils/llamaServerUtils";
+import {getAppResourcesDir} from './utils/llamaServerUtils'
 
 /** embedding 服务状态（供外部使用） */
 export interface EmbeddingServerStatus {
@@ -47,11 +45,6 @@ export class EmbeddingServerManager extends LlamaServerBase {
      * bge 模型存放于 resources/bge-small-zh-v1.5-gguf/ 子目录下
      */
     private getBgeModelDir(): string {
-        // 检测是否在打包环境中
-        // if (app.isPackaged) {
-        //     return path.join(process.resourcesPath!, 'bge-small-zh-v1.5-gguf')
-        // }
-        // return path.join(app.getAppPath(), 'resources', 'bge-small-zh-v1.5-gguf')
         return getAppResourcesDir('bge-small-zh-v1.5-gguf')
     }
 

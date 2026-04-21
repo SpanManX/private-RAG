@@ -19,14 +19,6 @@ export function getAppResourcesDir(dirName: string): string {
         return path.join(process.resourcesPath!, dirName)
     }
     return path.join(app.getAppPath(), 'resources', dirName)
-
-
-    // if (app.isPackaged) {
-    //     return process.resourcesPath!
-    // }
-    //
-    // // 开发模式：直接从项目根目录读取 resources
-    // return path.join(app.getAppPath(), 'resources')
 }
 
 /**

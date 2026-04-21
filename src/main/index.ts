@@ -21,6 +21,28 @@ import {RagEngine} from './ragEngine'
 // ============================================
 let mainWindow: BrowserWindow | null = null
 
+/**
+ * 检测路径是否包含中文字符
+ */
+function hasChinesePath(p: string): boolean {
+    return /[\u4e00-\u9fa5]/.test(p)
+}
+
+/**
+ * 初始化前检查路径，返回错误信息或 null
+ */
+function checkPathBeforeInit(): string | null {
+    const exePath = app.getPath('exe')
+    if (hasChinesePath(exePath)) {
+        return `程序安装路径包含中文：${exePath}\n\n请将程序安装或移动到纯英文路径下，再重新启动。`
+    }
+    const userDataPath = app.getPath('userData')
+    if (hasChinesePath(userDataPath)) {
+        return `用户数据路径包含中文：${userDataPath}\n\n请将 AppData 目录移动到纯英文路径下，或重装系统用户目录为英文名。`
+    }
+    return null
+}
+
 process.on('uncaughtException', (error) => {
     try {
         if (mainWindow) {
@@ -330,16 +352,28 @@ function registerIpcHandlers(win: BrowserWindow): void {
 
 // 应用准备就绪：初始化日志、模块、窗口
 app.whenReady().then(async () => {
+    // 初始化日志
     initLogger(join(app.getPath('userData'), 'logs', 'main.log'))
     log('App ready')
     electronApp.setAppUserModelId('com.privrag.app')
+
+    // 创建窗口
+    mainWindow = createWindow()
+
+    // 检查路径（中文路径会导致 llama-server 无法加载模型）
+    const pathError = checkPathBeforeInit()
+    if (pathError) {
+        log(`[路径检查失败] ${pathError}`)
+        dialog.showErrorBox('路径错误', pathError)
+        app.quit()
+        return
+    }
 
     app.on('browser-window-created', (_, window) => {
         optimizer.watchWindowShortcuts(window)
     })
 
     await initializeModules()
-    mainWindow = createWindow()
     registerIpcHandlers(mainWindow)
 
     // macOS：点击 Dock 图标时重建窗口

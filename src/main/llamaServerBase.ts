@@ -19,6 +19,7 @@ import {getModelsDir, setModelsDir} from './store'
 import {detectGpu, waitForServer} from './utils/serverUtils'
 import {findLlamaServerExe, getLlamaServerDir} from './utils/llamaServerUtils'
 import * as fs from 'fs'
+import path from "node:path";
 
 /** llama-server 服务状态 */
 export interface ServerStatus {
@@ -150,42 +151,4 @@ export abstract class LlamaServerBase {
 
     /** 停止服务（子类实现） */
     abstract stop(): Promise<void>
-
-    /**
-     * 启动 llama-server 子进程
-     *
-     * 封装公共的进程创建和日志绑定逻辑：
-     * - 设置 stdio 管道
-     * - 绑定 stdout/stderr 日志输出
-     * - 监听进程退出事件并清理状态
-     *
-     * @param args - llama-server 命令行参数
-     */
-    protected spawnProcess(args: string[]): ChildProcess {
-        if (!existsSync(this.llamaServerPath)) {
-            throw new Error(`llama-server.exe 未找到: ${this.llamaServerPath}`)
-        }
-
-        try {
-            const process = spawn(this.llamaServerPath, args, {
-                stdio: ['ignore', 'pipe', 'pipe']
-            })
-
-            process.stdout?.on('data', (data) => {
-                log(`[llama-server] ${data.toString().trim()}`)
-            })
-            process.stderr?.on('data', (data) => {
-                log(`[llama-server ERROR] ${data.toString().trim()}`)
-            })
-
-            process.on('exit', (code) => {
-                log(`llama-server 已退出，代码: ${code}`)
-                this.process = null
-            })
-
-            return process
-        } catch (error) {
-            throw new Error(`启动 llama-server 失败: ${error}`)
-        }
-    }
 }

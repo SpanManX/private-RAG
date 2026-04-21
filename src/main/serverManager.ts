@@ -17,6 +17,7 @@ import axios from 'axios'
 import path from 'node:path'
 import {LlamaServerBase, ServerStatus} from './llamaServerBase'
 import {EmbeddingServerManager} from './embeddingServerManager'
+import {ChildProcess, spawn} from "child_process";
 
 /** 模型下载进度（IPC 事件发送） */
 export interface DownloadProgress {
@@ -71,6 +72,44 @@ export class ServerManager extends LlamaServerBase {
             gpuAvailable: this.gpuAvailable,
             modelPath: this.modelPath,
             modelName: this.modelPath ? this.modelPath.split(/[/\\]/).pop() : undefined
+        }
+    }
+
+    /**
+     * 启动 llama-server 子进程
+     *
+     * 封装公共的进程创建和日志绑定逻辑：
+     * - 设置 stdio 管道
+     * - 绑定 stdout/stderr 日志输出
+     * - 监听进程退出事件并清理状态
+     *
+     * @param args - llama-server 命令行参数
+     */
+    protected spawnProcess(args: string[]): ChildProcess {
+        if (!existsSync(this.llamaServerPath)) {
+            throw new Error(`llama-server.exe 未找到: ${this.llamaServerPath}`)
+        }
+
+        try {
+            const process = spawn(this.llamaServerPath, args, {
+                stdio: ['ignore', 'pipe', 'pipe']
+            })
+
+            process.stdout?.on('data', (data) => {
+                log(`[llama-server] ${data.toString().trim()}`)
+            })
+            process.stderr?.on('data', (data) => {
+                log(`[llama-server ERROR] ${data.toString().trim()}`)
+            })
+
+            process.on('exit', (code) => {
+                log(`llama-server 已退出，代码: ${code}`)
+                this.process = null
+            })
+
+            return process
+        } catch (error) {
+            throw new Error(`启动 llama-server 失败: ${error}`)
         }
     }
 
