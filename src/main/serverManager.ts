@@ -15,7 +15,7 @@ import {log} from './logger'
 import * as fs from 'node:fs'
 import axios from 'axios'
 import path from 'node:path'
-import {LlamaServerBase, ServerStatus} from './utils/llamaServerManager'
+import {LlamaServerBase, ServerStatus} from './llamaServerManager'
 import {EmbeddingServerManager} from './embeddingServerManager'
 
 /** 模型下载进度（IPC 事件发送） */
@@ -92,10 +92,8 @@ export class ServerManager extends LlamaServerBase {
         await this.refreshPaths()
 
         if (!existsSync(this.llamaServerPath)) {
-            throw new Error(`llama-server.exe 未找到，请先从设置页面下载`)
-        }
-        if (!existsSync(this.modelPath)) {
-            console.log(this.modelPath)
+            throw new Error(`未找到 llama-server.exe，请先下载并放入 ./resources/app.asar.unpacked/resources`)
+        } else if (!existsSync(this.modelPath)) {
             throw new Error(`模型文件未找到，请到设置页面下载模型`)
         }
 

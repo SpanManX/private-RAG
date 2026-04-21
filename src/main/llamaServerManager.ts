@@ -14,11 +14,10 @@
 import {spawn, ChildProcess} from 'child_process'
 import {join} from 'path'
 import {existsSync} from 'fs'
-import {app} from 'electron'
-import {log} from '../logger'
-import {getModelsDir, setModelsDir} from '../store'
-import {detectGpu, waitForServer} from './serverUtils'
-import {findLlamaServerExe, getLlamaServerDir} from './llamaServerUtils'
+import {log} from './logger'
+import {getModelsDir, setModelsDir} from './store'
+import {detectGpu, waitForServer} from './utils/serverUtils'
+import {findLlamaServerExe, getLlamaServerDir} from './utils/llamaServerUtils'
 import * as fs from 'fs'
 
 /** llama-server 服务状态 */

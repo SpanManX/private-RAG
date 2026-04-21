@@ -1,4 +1,4 @@
-# PriVec - 私人文档向量知识库
+# PrivRAG - 私人文档向量知识库
 
 <div align="center">
 
@@ -175,7 +175,8 @@ src/
 
 ## 配置说明
 
-模型文件默认存放在 `rag-models/` 目录，首次启动会自动提示下载。
+模型文件默认存放在 `
+%USERPROFILE%\Documents\rag-models` 目录，首次启动会自动提示下载。
 
 如需手动配置模型路径，可在设置页面修改。
 
