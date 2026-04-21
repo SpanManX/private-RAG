@@ -167,7 +167,6 @@ const renderedContent = computed(() => {
 .typing-indicator {
   display: flex;
   gap: 10px;
-  padding: 8px 0;
   animation: fadeIn 0.2s ease-out;
 }
 
@@ -186,7 +185,7 @@ const renderedContent = computed(() => {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 12px 16px;
+  padding: 16px 3px;
   //background: white;
   border-radius: 12px;
   //box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);

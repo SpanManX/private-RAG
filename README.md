@@ -153,6 +153,10 @@ npm run build:win
 ## 项目结构
 
 ```
+├── resources/                      # 打包资源（dev 模式下在项目根目录）
+│   ├── llama-server/               # llama-server 可执行文件
+│   └── bge-small-zh-v1.5-gguf/     # Embedding 模型目录
+│
 src/
 ├── main/                           # Electron 主进程
 │   ├── index.ts                    # 入口、窗口创建、IPC 注册
@@ -181,7 +185,8 @@ src/
         │   ├── ChatArea.vue         # 聊天区域
         │   ├── MessageBubble.vue    # 消息气泡
         │   ├── DocList.vue          # 文档列表
-        │   └── FileUploader.vue     # 文件上传
+        │   ├── FileUploader.vue     # 文件上传
+        │   └── GlobalError.vue      # 全局错误提示
         ├── views/
         │   ├── ChatView.vue         # 对话页面
         │   └── SettingsView.vue     # 设置页面
@@ -196,7 +201,7 @@ src/
 ## 配置说明
 
 模型文件默认存放在 `
-%USERPROFILE%\Documents\rag-models` 目录，首次启动会自动提示下载。
+%USERPROFILE%\Documents\rag-models` 目录，首次启动会自动提示下载 **（不可使用中文目录）**。
 
 如需手动配置模型路径，可在设置页面修改。
 

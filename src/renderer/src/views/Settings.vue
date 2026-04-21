@@ -152,9 +152,6 @@ function getStatusLabel(): string {
         <div class="status-row">
           <span class="label">状态:</span>
           <span class="status-badge" :class="serverStatus">{{ getStatusLabel() }}</span>
-          <!--          <span class="gpu-badge" :class="gpuAvailable ? 'gpu-ok' : 'gpu-none'">-->
-          <!--            GPU: {{ gpuAvailable ? '可用' : '不可用' }}-->
-          <!--          </span>-->
         </div>
         <div class="status-row">
           <span class="label">信息:</span>
@@ -376,22 +373,6 @@ function getStatusLabel(): string {
 .btn-secondary:hover:not(:disabled) {
   background: #e5e7eb;
 }
-
-/* 新增 GPU 徽章 */
-//.gpu-badge {
-//  font-size: 12px;
-//  padding: 2px 8px;
-//  border-radius: 4px;
-//  margin-left: auto;
-//}
-//.gpu-badge.gpu-ok {
-//  background: #d1fae5;
-//  color: #059669;
-//}
-//.gpu-badge.gpu-none {
-//  background: #f3f4f6;
-//  color: #6b7280;
-//}
 
 /* 新增下载样式 */
 .download-file {

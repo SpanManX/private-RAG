@@ -17,6 +17,33 @@ import {IndexManager} from './indexManager'
 import {RagEngine} from './ragEngine'
 
 // ============================================
+// 全局错误捕获（尽早注册，确保捕获所有阶段错误）
+// ============================================
+let mainWindow: BrowserWindow | null = null
+
+process.on('uncaughtException', (error) => {
+    try {
+        if (mainWindow) {
+            mainWindow.webContents.send('global-error', error.message)
+        }
+    } catch {
+        // 避免发送错误时又触发这个 handler
+    }
+    log(`未捕获异常: ${error.message}\n${error.stack}`)
+})
+
+process.on('unhandledRejection', (reason) => {
+    try {
+        if (mainWindow) {
+            mainWindow.webContents.send('global-error', String(reason))
+        }
+    } catch {
+        // 避免发送错误时又触发这个 handler
+    }
+    log(`未处理 Promise 拒绝: ${reason}`)
+})
+
+// ============================================
 // 全局模块单例
 // ============================================
 let serverManager: ServerManager
@@ -96,7 +123,7 @@ async function initializeModules(): Promise<void> {
  * - dialog:* - 文件对话框
  * - config:* - 配置管理
  */
-function registerIpcHandlers(mainWindow: BrowserWindow): void {
+function registerIpcHandlers(win: BrowserWindow): void {
     // -------- llama-server 服务管理 --------
     ipcMain.handle('server:status', () => serverManager.getStatus())
     ipcMain.handle('embedding:status', () => serverManager.embeddingManager.getStatus())
@@ -108,7 +135,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
             return {success: true, status: serverManager.getStatus()}
         } catch (error) {
             log('启动服务失败:', error)
-            mainWindow.webContents.send('global:error', String(error))
+            win.webContents.send('global:error', String(error))
             return {success: false, error: String(error), status: serverManager.getStatus()}
         }
     })
@@ -292,6 +319,7 @@ function registerIpcHandlers(mainWindow: BrowserWindow): void {
     })
 }
 
+
 // ============================================
 // Electron 应用生命周期
 // ============================================
@@ -307,7 +335,7 @@ app.whenReady().then(async () => {
     })
 
     await initializeModules()
-    const mainWindow = createWindow()
+    mainWindow = createWindow()
     registerIpcHandlers(mainWindow)
 
     // macOS：点击 Dock 图标时重建窗口
