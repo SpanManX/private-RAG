@@ -9,17 +9,16 @@ import {app} from 'electron'
  * Electron 打包后的资源路径与开发时不同：
  * - 开发模式（dev）：app.getAppPath()/resources/
  *   示例：D:\GitHub\rag-knowledge-base\resources\
- * - 打包后（packed）：process.resourcesPath/resources/
- *   示例：C:\Users\xxx\AppData\...\resources\
+ * - 打包后（packed）：process.resourcesPath/
+ *   示例：C:\Users\xxx\AppData\Local\Programs\PrivRAG\resources\
  */
 export function getAppResourcesDir(): string {
     // 检测是否在打包环境中
-    // asar 文件路径中会包含 .asar 或 app.asar
     const inAsar = app.getAppPath().includes('.asar')
 
-    // 打包后用 process.resourcesPath（extraResources 放在此目录）
+    // 打包后 extraResources 直接放在 process.resourcesPath 下
     if (inAsar) {
-        return join(process.resourcesPath!, 'resources')
+        return process.resourcesPath!
     }
 
     // 开发模式：直接从项目根目录读取 resources

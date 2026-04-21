@@ -15,7 +15,7 @@ files:
 # extraResources 直接放到 process.resourcesPath/resources/，无需 .asar.unpacked
 extraResources:
   - from: resources/
-    to: ./resources/
+    to: ./
 asarUnpack:
   - "**/*.exe"
 win:
