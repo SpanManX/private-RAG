@@ -26,6 +26,8 @@ const api = {
         start: () => ipcRenderer.invoke('server:start'),
         /** 停止 llama-server */
         stop: () => ipcRenderer.invoke('server:stop'),
+        /** 获取对话服务 URL */
+        getServerUrl: () => ipcRenderer.invoke('server:get-url'),
         /** 下载模型文件 */
         downloadModel: () => ipcRenderer.invoke('server:download-model'),
         /** 取消下载 */

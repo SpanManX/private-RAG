@@ -65,12 +65,16 @@ export const useChatStore = defineStore('chat', () => {
             // 使用 fetch-event-source 接收 SSE 流
             const ctrl = new AbortController()
             currentCtrl.value = ctrl  // 保存引用供 stopGenerating 使用
-            await fetchEventSource('http://localhost:8080/v1/chat/completions', {
+            // 获取当前对话服务的 URL（动态端口）
+            const serverUrl = await window.api.server.getServerUrl()
+            await fetchEventSource(`${serverUrl}/v1/chat/completions`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                     messages: [await window.api.rag.systemTemplate(), {role: 'user', content: result.prompt}],
                     stream: true,
+                    return_progress : true,   // 返回进度信息
+                    timings_per_token : true, // 逐词耗时统计
                     temperature: 0.1,
                     max_tokens: 1024
                 }),

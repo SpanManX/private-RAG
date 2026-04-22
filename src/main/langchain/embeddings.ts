@@ -6,6 +6,7 @@
 
 import {Embeddings} from '@langchain/core/embeddings'
 import http from 'http'
+import {ServerConfig, ServiceType} from '../utils/serverUtils'
 
 
 /**
@@ -36,11 +37,13 @@ export class LlamaEmbeddings extends Embeddings {
     private embedText(text: string): Promise<number[]> {
         return new Promise((resolve, reject) => {
             const body = JSON.stringify({input: text})
+            const host = ServerConfig.getHost()
+            const port = ServerConfig.getPort(ServiceType.EMBEDDING)
 
             const req = http.request(
                 {
-                    host: '127.0.0.1',
-                    port: 8081,
+                    host,
+                    port,
                     path: '/embedding',
                     method: 'POST',
                     headers: {

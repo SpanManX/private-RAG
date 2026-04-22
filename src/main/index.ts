@@ -9,12 +9,13 @@
 
 import {app, shell, BrowserWindow, ipcMain, dialog} from 'electron'
 import {join} from 'path'
-import {electronApp, optimizer, is} from '@electron-toolkit/utils'
+import {electronApp, optimizer} from '@electron-toolkit/utils'
 import {initLogger, log} from './logger'
 import {ServerManager} from './serverManager'
 import {DocumentProcessor} from './documentProcessor'
 import {IndexManager} from './indexManager'
 import {RagEngine} from './ragEngine'
+import {ServerConfig, ServiceType} from './utils/serverUtils'
 
 // ============================================
 // 全局错误捕获（尽早注册，确保捕获所有阶段错误）
@@ -35,10 +36,6 @@ function checkPathBeforeInit(): string | null {
     const exePath = app.getPath('exe')
     if (hasChinesePath(exePath)) {
         return `程序安装路径包含中文：${exePath}\n\n请将程序安装或移动到纯英文路径下，再重新启动。`
-    }
-    const userDataPath = app.getPath('userData')
-    if (hasChinesePath(userDataPath)) {
-        return `用户数据路径包含中文：${userDataPath}\n\n请将 AppData 目录移动到纯英文路径下，或重装系统用户目录为英文名。`
     }
     return null
 }
@@ -106,6 +103,15 @@ function createWindow(): BrowserWindow {
         log('Window ready')
     })
 
+    if(!app.isPackaged) {
+        // 启用 F12 打开 DevTools
+        mainWindow.webContents.on('before-input-event', (_event, input) => {
+            if (input.key === 'F12') {
+                mainWindow.webContents.toggleDevTools()
+            }
+        })
+    }
+
     // 阻止外部链接在当前窗口打开，转为系统默认浏览器
     mainWindow.webContents.setWindowOpenHandler((details) => {
         shell.openExternal(details.url)
@@ -113,11 +119,11 @@ function createWindow(): BrowserWindow {
     })
 
     // 开发模式使用 Vite 开发的 URL，生产模式使用打包后的 HTML
-    if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-        mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
-    } else {
+    // if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    //     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    // } else {
         mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
-    }
+    // }
     return mainWindow
 }
 
@@ -170,6 +176,9 @@ function registerIpcHandlers(win: BrowserWindow): void {
         await serverManager.stop()
         await serverManager.embeddingManager.stop()
         return serverManager.getStatus()
+    })
+    ipcMain.handle('server:get-url', () => {
+        return ServerConfig.getUrl(ServiceType.CHAT)
     })
     ipcMain.handle('server:download-model', () => serverManager.downloadModel())
     ipcMain.handle('server:cancel-download', () => serverManager.cancelDownload())

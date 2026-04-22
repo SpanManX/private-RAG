@@ -33,6 +33,7 @@ interface Window {
             stop: () => Promise<void>
             downloadModel: () => Promise<void>
             cancelDownload: () => Promise<void>
+            getServerUrl: () => Promise<string>
             onDownloadProgress: (callback: (progress: {
                 percent: number
                 speed: string

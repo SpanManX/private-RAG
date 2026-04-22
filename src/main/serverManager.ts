@@ -16,6 +16,7 @@ import * as fs from 'node:fs'
 import axios from 'axios'
 import path from 'node:path'
 import {LlamaServerBase, ServerStatus} from './llamaServerBase'
+import {ServerConfig, ServiceType} from './utils/serverUtils'
 import {EmbeddingServerManager} from './embeddingServerManager'
 import {ChildProcess, spawn} from "child_process";
 
@@ -36,8 +37,6 @@ export interface DownloadProgress {
  * 同时持有 EmbeddingServerManager 实例，用于管理向量服务
  */
 export class ServerManager extends LlamaServerBase {
-    /** 对话服务端口 */
-    private port = 8080
     /** Qwen 模型文件路径 */
     private modelPath!: string
     /** 下载取消标记 */
@@ -66,9 +65,10 @@ export class ServerManager extends LlamaServerBase {
 
     getStatus(): ServerStatus {
         const state: ServerStatus['state'] = this.process ? 'running' : 'idle'
+        const port = ServerConfig.getPort(ServiceType.CHAT)
         return {
             state,
-            message: this.process ? `llama-server running on port ${this.port}` : 'Server not running',
+            message: this.process ? `llama-server running on port ${port}` : 'Server not running',
             gpuAvailable: this.gpuAvailable,
             modelPath: this.modelPath,
             modelName: this.modelPath ? this.modelPath.split(/[/\\]/).pop() : undefined
@@ -119,7 +119,7 @@ export class ServerManager extends LlamaServerBase {
      * 启动参数：
      * - -m: Qwen 模型路径
      * - -c 4096: 上下文窗口大小
-     * - --port 8080: 对话服务端口
+     * - --port: 动态分配（默认 8080，端口占用时自动 +1）
      * - -ngl: GPU 层数（99=尽量用 GPU）
      */
     async start(): Promise<void> {
@@ -136,17 +136,19 @@ export class ServerManager extends LlamaServerBase {
             throw new Error(`模型文件未找到，请到设置页面下载模型`)
         }
 
+        // 动态查找可用端口
+        const port = await ServerConfig.findAvailablePort(ServiceType.CHAT)
+
         const args = [
             '-m', this.modelPath,
             '-c', '4096',
-            '--port', String(this.port),
             '-ngl', this.gpuAvailable ? '99' : '0',
-            '--host', '127.0.0.1'
+            ...ServerConfig.getServerArgs(ServiceType.CHAT, port)
         ]
 
         this.process = this.spawnProcess(args)
-        await this._waitForServer(this.port, 60000)
-        log('llama-server 启动成功')
+        await this._waitForServer(port, 60000)
+        log(`llama-server 启动成功，端口 ${port}`)
     }
 
     /** 停止对话服务 */

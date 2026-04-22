@@ -14,6 +14,7 @@ import {existsSync} from 'fs'
 import {log} from './logger'
 import * as fs from 'fs'
 import {LlamaServerBase, ServerStatus} from './llamaServerBase'
+import {ServerConfig, ServiceType} from './utils/serverUtils'
 import {getAppResourcesDir} from './utils/llamaServerUtils'
 
 /** embedding 服务状态（供外部使用） */
@@ -30,8 +31,6 @@ export interface EmbeddingServerStatus {
  * bge 模型必须使用 --pooling cls 参数，否则向量质量会严重下降
  */
 export class EmbeddingServerManager extends LlamaServerBase {
-    /** Embedding 服务专用端口 */
-    private port = 8081
     /** bge 模型文件路径 */
     private modelPath!: string
 
@@ -68,9 +67,10 @@ export class EmbeddingServerManager extends LlamaServerBase {
 
     getStatus(): ServerStatus {
         const state: ServerStatus['state'] = this.process ? 'running' : 'idle'
+        const port = ServerConfig.getPort(ServiceType.EMBEDDING)
         return {
             state,
-            message: this.process ? `Embedding server running on port ${this.port}` : 'Embedding server not running',
+            message: this.process ? `Embedding server running on port ${port}` : 'Embedding server not running',
             gpuAvailable: this.gpuAvailable,
             modelPath: this.modelPath,
             modelName: this.modelPath ? this.modelPath.split(/[/\\]/).pop() : undefined
@@ -83,7 +83,7 @@ export class EmbeddingServerManager extends LlamaServerBase {
      * 启动参数：
      * - -m: bge 模型路径
      * - -c 4096: 上下文窗口大小
-     * - --port 8081: 独立端口
+     * - --port: 动态分配（默认 8081，端口占用时自动 +1）
      * - -ngl: GPU 层数（99=尽量用 GPU）
      * - --embedding: 启用 embedding 模式
      * - --pooling cls: 必须参数，bge 模型专用
@@ -106,14 +106,16 @@ export class EmbeddingServerManager extends LlamaServerBase {
             throw new Error(`[Embedding] bge 模型文件未找到: ${this.modelPath}`)
         }
 
+        // 动态查找可用端口
+        const port = await ServerConfig.findAvailablePort(ServiceType.EMBEDDING)
+
         const args = [
             '-m', this.modelPath,
             '-c', '4096',
-            '--port', String(this.port),
             '-ngl', this.gpuAvailable ? '99' : '0',
             '--embedding',
             '--pooling', 'cls',
-            '--host', '127.0.0.1'
+            ...ServerConfig.getServerArgs(ServiceType.EMBEDDING, port)
         ]
 
         log(`[Embedding] 启动参数: ${args.join(' ')}`)
@@ -135,8 +137,8 @@ export class EmbeddingServerManager extends LlamaServerBase {
         })
 
         // GPU 冷启动较慢，增加等待时间到 90s
-        await this._waitForServer(this.port, 90000)
-        log('[Embedding] embedding-server 启动成功，端口 8081')
+        await this._waitForServer(port, 90000)
+        log(`[Embedding] embedding-server 启动成功，端口 ${port}`)
     }
 
     /** 停止 embedding 服务 */

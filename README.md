@@ -44,7 +44,7 @@
 
 ### 下载安装包（推荐）
 
-前往 [Releases](https://github.com/your-repo/releases) 下载最新版本：
+前往 [Releases](https://github.com/SpanManX/private-RAG/releases) 下载最新版本：
 
 ### 从源码运行
 

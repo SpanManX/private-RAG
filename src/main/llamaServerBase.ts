@@ -11,15 +11,16 @@
  * - 目录配置管理（从 store 读取/写入）
  */
 
-import {spawn, ChildProcess} from 'child_process'
+// 从 serverUtils.ts 重新导出，保持向后兼容
+export {ServerConfig, ServiceType} from './utils/serverUtils'
+
+import {ChildProcess} from 'child_process'
 import {join} from 'path'
-import {existsSync} from 'fs'
 import {log} from './logger'
 import {getModelsDir, setModelsDir} from './store'
 import {detectGpu, waitForServer} from './utils/serverUtils'
 import {findLlamaServerExe, getLlamaServerDir} from './utils/llamaServerUtils'
 import * as fs from 'fs'
-import path from "node:path";
 
 /** llama-server 服务状态 */
 export interface ServerStatus {
