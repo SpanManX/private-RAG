@@ -9,7 +9,7 @@
     "dev": "chcp 65001 && electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "postinstall": "electron-builder install-app-deps",
+    "postinstall": "node -e \"try{require('electron-builder/install-app-deps')}catch(e){}\"",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
     "build:win:portable": "npm run build && electron-builder --win portable",
