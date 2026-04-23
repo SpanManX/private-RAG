@@ -6,7 +6,7 @@
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-green.svg)
 ![Electron](https://img.shields.io/badge/Electron-33.4.11-47848F?style=flat&logo=electron)
 
-**🔒 纯本地运行的私人知识库 | 📄 支持 PDF/Word/Markdown/TXT | 💬 与文档对话**
+**🔒 纯本地运行的私人知识库 | 📄 支持 PDF/Word/Excel/Markdown/TXT | 💬 与文档对话**
 
 *不上传、不外传 — 你的数据，只在你的电脑上。*
 
@@ -17,7 +17,7 @@
 ## 功能特性
 
 ### 核心能力
-- 📄 **多格式支持** — PDF、Word、Markdown、TXT 文档导入
+- 📄 **多格式支持** — PDF、Word、Excel、Markdown、TXT 文档导入（Excel 保留表头-行关联）
 - 💬 **智能问答** — 基于向量检索的 RAG 对话，附带参考来源
 - 🔒 **完全本地** — 所有处理在本地完成，无需联网
 - ⚡ **一键启动** — 无需复杂配置，自带模型管理
@@ -81,7 +81,7 @@ npm run build:win
 │                        文档导入流程                          │
 └─────────────────────────────────────────────────────────────┘
 
-  📄 PDF/DOCX/MD/TXT
+  📄 PDF/DOCX/XLSX/MD/TXT
          │
          ▼
   ┌──────────────────┐
@@ -146,7 +146,7 @@ npm run build:win
 | LLM 推理 | llama.cpp (llama-server) | Qwen3-4B-Q5_K_M |
 | Embedding | bge-small-zh-v1.5-gguf | 384 维向量 |
 | 向量数据库 | LanceDB | 单文件、嵌入型 |
-| 文档解析 | pdf-parse / mammoth | PDF/Word 支持 |
+| 文档解析 | pdf-parse / mammoth / xlsx | PDF/Word/Excel 支持 |
 
 ---
 
@@ -163,6 +163,7 @@ src/
 │   ├── serverManager.ts            # 对话服务管理器 (llama-server 8080)
 │   ├── embeddingServerManager.ts   # 向量服务管理器 (llama-server 8081)
 │   ├── documentProcessor.ts         # 文档解析 (PDF/DOCX/MD/TXT)
+│   ├── excelProcessor.ts            # Excel 解析 (xlsx/xls)
 │   ├── indexManager.ts             # LanceDB 索引管理
 │   ├── ragEngine.ts                # RAG 编排引擎
 │   ├── logger.ts                   # 日志工具
