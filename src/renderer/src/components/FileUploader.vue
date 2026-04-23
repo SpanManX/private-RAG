@@ -5,7 +5,7 @@
  * 功能：
  * - 支持点击选择文件（打开系统文件对话框）
  * - 支持拖拽文件到组件上
- * - 自动过滤支持的文档格式（PDF、DOCX、MD、TXT）
+ * - 自动过滤支持的文档格式（PDF、DOCX、MD、TXT、XLSX/XLS）
  * - 批量导入到文档库
  * - 显示导入进度（解析 → 向量化）
  * - 大模型未启动时给出提示
@@ -13,6 +13,7 @@
  * 支持的文件格式：
  * - .pdf - PDF 文档
  * - .docx / .doc - Word 文档
+ * - .xlsx / .xls - Excel 表格
  * - .md / .markdown - Markdown 文档
  * - .txt - 纯文本文件
  */
@@ -78,7 +79,7 @@ function handleDrop(event: DragEvent): void {
 
   // 提取文件路径，并过滤支持的文件格式
   const paths = Array.from(files)
-    .filter((f) => /\.(pdf|docx?|md|txt)$/i.test(f.name))  // 只保留支持的格式
+    .filter((f) => /\.(pdf|docx?|xlsx?|md|txt)$/i.test(f.name))  // 只保留支持的格式
     .map((f) => (f as any).path)  // 获取文件完整路径
 
   if (paths.length > 0) {

@@ -103,7 +103,7 @@ function createWindow(): BrowserWindow {
         log('Window ready')
     })
 
-    if(!app.isPackaged) {
+    if (!app.isPackaged) {
         // 启用 F12 打开 DevTools
         mainWindow.webContents.on('before-input-event', (_event, input) => {
             if (input.key === 'F12') {
@@ -122,7 +122,7 @@ function createWindow(): BrowserWindow {
     // if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     //     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
     // } else {
-        mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
     // }
     return mainWindow
 }
@@ -348,7 +348,7 @@ function registerIpcHandlers(win: BrowserWindow): void {
     ipcMain.handle('dialog:open-file', async () => {
         const result = await dialog.showOpenDialog({
             properties: ['openFile', 'multiSelections'],
-            filters: [{name: 'Documents', extensions: ['pdf', 'docx', 'md', 'txt']}]
+            filters: [{name: 'Documents', extensions: ['pdf', 'docx', 'md', 'txt', 'xlsx', 'xls']}]
         })
         return result.filePaths
     })

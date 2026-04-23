@@ -33,7 +33,8 @@
     "pdf-parse": "^1.1.1",
     "pinia": "^2.3.0",
     "sass": "^1.99.0",
-    "vue-router": "^4.5.0"
+    "vue-router": "^4.5.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@electron-toolkit/tsconfig": "^1.0.1",
