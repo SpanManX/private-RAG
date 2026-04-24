@@ -56,6 +56,9 @@ cd private-RAG
 # 安装依赖
 npm install
 
+# 构建项目（初次必须先运行）
+npm run build
+
 # 开发模式
 npm run dev
 
