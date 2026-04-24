@@ -76,7 +76,7 @@ export const useChatStore = defineStore('chat', () => {
                     return_progress : true,   // 返回进度信息
                     timings_per_token : true, // 逐词耗时统计
                     temperature: 0.1,
-                    max_tokens: 1024
+                    max_tokens: 2048
                 }),
                 signal: ctrl.signal,
                 onmessage(ev) {
