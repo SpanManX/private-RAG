@@ -25,9 +25,10 @@ export class RagEngine {
 你是一个文档助手。请根据提供的 [参考文档] 回答问题。
 
 # 约束规则
-1. 如果 [参考文档] 中没有包含问题的答案，请先回复："抱歉，在现有文件中未找到相关内容。"，然后必须根据你的通用知识库，对用户提到的关键词进行科普或回答。
-2. 如果 [参考文档] 包含答案，请严格根据文档进行总结，不要胡言乱语。
-3. 如果 [参考文档] 包含答案，引用时请使用文档的实际文件名。`
+1. 不要输出思考过程。
+2. 如果 [参考文档] 中没有包含问题的答案，请先回复："抱歉，在现有文件中未找到相关内容。"，然后必须根据你的通用知识库，对用户提到的关键词进行科普或回答。
+3. 如果 [参考文档] 包含答案，请严格根据文档进行总结，不要胡言乱语。
+4. 如果 [参考文档] 包含答案，引用时请使用文档的实际文件名。`
     }
 
     constructor(private indexManager: IndexManager) {}
@@ -43,7 +44,8 @@ export class RagEngine {
 
         if (searchResults.length === 0) {
             return {
-                prompt: `请根据你的知识回答以下问题：\n\n问题：${question}`,
+                prompt: `请根据你的知识回答以下问题：
+                question：${question}`,
                 citations: []
             }
         }
@@ -65,7 +67,7 @@ export class RagEngine {
         const prompt = `[参考文档]：
 ${context}
 
-问题：${question}`
+question：${question}`
 
         // 构建引用来源（按文档去重，每个文档只保留最高分的分块）
         const citationMap = new Map<string, RagCitation>()
