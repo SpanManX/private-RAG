@@ -38,6 +38,7 @@ function createSSEHandlers(
                     if (json.choices?.[0]?.delta?.content) {
                         const content = json.choices[0].delta.content
                         if (filterThink) {
+                            console.log(content)
                             // 在线模式：过滤 <think> 标签
                             if (content.startsWith('<think>')) {
                                 inThink = true
