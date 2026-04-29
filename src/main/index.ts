@@ -11,7 +11,7 @@ import {app, shell, BrowserWindow, ipcMain, dialog} from 'electron'
 import {join} from 'path'
 import {electronApp, is, optimizer} from '@electron-toolkit/utils'
 import {initLogger, log} from './logger'
-import {ServerManager, setWin as setServerWin} from './serverManager'
+import {ServerManager} from './serverManager'
 import {DocumentProcessor} from './documentProcessor'
 import {IndexManager} from './indexManager'
 import {RagEngine} from './ragEngine'
@@ -140,7 +140,6 @@ function createWindow(): BrowserWindow {
 async function initializeModules(): Promise<void> {
     const userDataPath = app.getPath('userData')
     serverManager = new ServerManager()
-    setServerWin(serverManager)
     embeddingServerManager = new EmbeddingServerManager()
     documentProcessor = new DocumentProcessor()
     indexManager = new IndexManager(userDataPath)
@@ -162,13 +161,16 @@ async function initializeModules(): Promise<void> {
  */
 function registerIpcHandlers(win: BrowserWindow): void {
     // -------- 发送服务状态变化 --------
-    const sendStatusChange = () => {
+    const sendStatusChange = (error?: string) => {
         const chatRunning = serverManager.getStatus().state === 'running'
         const embeddingRunning = embeddingServerManager.getStatus().state === 'running'
+        const mode = getModelMode()
         win.webContents.send('server:status-changed', {
             chatRunning,
             embeddingRunning,
-            gpuAvailable: serverManager.getGpuAvailable()
+            gpuAvailable: serverManager.getGpuAvailable(),
+            modelMode: mode,
+            error
         })
     }
 
@@ -179,6 +181,10 @@ function registerIpcHandlers(win: BrowserWindow): void {
         try {
             const mode = getModelMode()
             if (mode === 'online') {
+                const apiConfig = getOnlineApiConfig()
+                if (!apiConfig.url || !apiConfig.key || !apiConfig.model) {
+                    throw new Error('在线 API 配置不完整，请先填写 API 地址、Key 和模型名称')
+                }
                 await embeddingServerManager.start()
             } else {
                 await serverManager.start()
@@ -187,7 +193,7 @@ function registerIpcHandlers(win: BrowserWindow): void {
             sendStatusChange()
             return {success: true, status: serverManager.getStatus()}
         } catch (error) {
-            sendStatusChange()
+            sendStatusChange(String(error))
             log('启动服务失败:', error)
             win.webContents.send('global:error', String(error))
             throw error

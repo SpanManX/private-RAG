@@ -18,9 +18,13 @@ onMounted(async () => {
   updateStatus(status.state, embeddingStatus.state, status.gpuAvailable ?? false)
 
   // 监听服务状态变化
-  window.api.server.onStatusChange(({chatRunning, embeddingRunning, gpuAvailable: gpu}) => {
+  window.api.server.onStatusChange(({chatRunning, embeddingRunning, gpuAvailable: gpu, modelMode, error}) => {
     gpuAvailable.value = gpu
-    const isRunning = modelMode.value === 'online'
+    if (error) {
+      serverStatus.value = 'error'
+      return
+    }
+    const isRunning = modelMode === 'online'
       ? embeddingRunning
       : (chatRunning && embeddingRunning)
     serverStatus.value = isRunning ? 'running' : 'idle'
@@ -42,7 +46,7 @@ async function toggleServer() {
     try {
       await window.api.server.start()
     } catch {
-      serverStatus.value = 'error'
+      // 错误由 GlobalError 弹窗显示，状态由 server:status-changed 事件更新
     }
   }
 }

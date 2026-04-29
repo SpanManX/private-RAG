@@ -46,6 +46,8 @@ interface Window {
                 chatRunning: boolean
                 embeddingRunning: boolean
                 gpuAvailable: boolean
+                modelMode: 'local' | 'online'
+                error?: string
             }) => void) => void
         }
         document: {

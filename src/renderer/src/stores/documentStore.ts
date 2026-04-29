@@ -75,7 +75,7 @@ export const useDocumentStore = defineStore('document', () => {
 
     // 监听主进程发送的服务状态变化事件
     window.api.server.onStatusChange((status) => {
-        const mode = modelMode.value
+        const mode = status.modelMode
         if (mode === 'online') {
             isServerRunning.value = status.embeddingRunning
         } else {

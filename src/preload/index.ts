@@ -43,7 +43,7 @@ const api = {
         }) => void) =>
             ipcRenderer.on('server:download-progress', (_event, progress) => callback(progress)),
         /** 监听服务状态变化（事件驱动） */
-        onStatusChange: (callback: (status: { chatRunning: boolean; embeddingRunning: boolean; gpuAvailable: boolean }) => void) =>
+        onStatusChange: (callback: (status: { chatRunning: boolean; embeddingRunning: boolean; gpuAvailable: boolean; modelMode: 'local' | 'online'; error?: string }) => void) =>
             ipcRenderer.on('server:status-changed', (_event, status) => callback(status))
     },
 
@@ -123,9 +123,8 @@ const api = {
 
     // -------- 全局错误提示 --------
     onGlobalError: (callback: any) => {
-        console.log('注册全局错误监听');
         // 先移除之前的监听器，防止多次触发重复弹窗
-        ipcRenderer.removeAllListeners('onGlobalError');
+        ipcRenderer.removeAllListeners('global:error');
         ipcRenderer.on('global:error', (_event: IpcRendererEvent, message: string) => callback(message));
     }
 }

@@ -17,12 +17,7 @@ import axios from 'axios'
 import path from 'node:path'
 import {LlamaServerBase} from './llamaServerBase'
 import {ServerConfig, ServiceType} from './utils/serverUtils'
-import {EmbeddingServerManager} from './embeddingServerManager'
 import {ChildProcess, spawn} from "child_process";
-
-/** 用于进程退出时通知渲染进程 */
-let _win: any = null
-export const setWin = (win: any) => { _win = win }
 
 /** 模型下载进度（IPC 事件发送） */
 export interface DownloadProgress {
@@ -41,10 +36,8 @@ export interface DownloadProgress {
  * 同时持有 EmbeddingServerManager 实例，用于管理向量服务
  */
 export class ServerManager extends LlamaServerBase {
-    /** 下载取消标记 */
-    private cancellationToken: { cancelled: boolean } = {cancelled: false}
-    /** 是否正在下载 */
-    private isDownloading = false
+    /** 下载取消控制器 */
+    private downloadAbortController: AbortController | null = null
 
     /** Qwen 模型文件名 */
     private readonly MODEL_FILE = 'Qwen3-4B-Q5_K_M.gguf'
@@ -97,13 +90,6 @@ export class ServerManager extends LlamaServerBase {
             process.on('exit', (code) => {
                 log(`llama-server 已退出，代码: ${code}`)
                 this.process = null
-                if (_win) {
-                    _win.webContents.send('server:status-changed', {
-                        chatRunning: false,
-                        embeddingRunning: this.embeddingManager.getStatus().state === 'running',
-                        gpuAvailable: this.gpuAvailable
-                    })
-                }
             })
 
             return process
@@ -161,8 +147,8 @@ export class ServerManager extends LlamaServerBase {
 
     /** 取消正在进行的模型下载 */
     cancelDownload(): void {
-        if (this.isDownloading) {
-            this.cancellationToken.cancelled = true
+        if (this.downloadAbortController) {
+            this.downloadAbortController.abort()
             log('下载已被用户取消')
         }
     }
@@ -177,8 +163,7 @@ export class ServerManager extends LlamaServerBase {
         const win = BrowserWindow.getAllWindows()[0]
         if (!win) return
 
-        this.cancellationToken = {cancelled: false}
-        this.isDownloading = true
+        this.downloadAbortController = new AbortController()
 
         try {
             if (!existsSync(this.modelsDir)) {
@@ -193,7 +178,7 @@ export class ServerManager extends LlamaServerBase {
                     fileName: this.MODEL_FILE, current: 1, total: 2
                 })
             } else {
-                await this.downloadModelFile(win, 'model', 1, 2)
+                await this.downloadModelFile(win, 'model', 1, 2, this.downloadAbortController.signal)
             }
 
             win.webContents.send('server:download-progress', {
@@ -201,7 +186,7 @@ export class ServerManager extends LlamaServerBase {
                 fileName: '', current: 2, total: 2
             })
         } finally {
-            this.isDownloading = false
+            this.downloadAbortController = null
         }
     }
 
@@ -219,7 +204,8 @@ export class ServerManager extends LlamaServerBase {
         win: BrowserWindow,
         label: 'model' | 'embedding',
         current: number,
-        total: number
+        total: number,
+        signal: AbortSignal
     ) {
         const fileName = this.MODEL_FILE
         const destPath = path.join(this.modelsDir, fileName)
@@ -236,6 +222,7 @@ export class ServerManager extends LlamaServerBase {
             method: 'GET',
             responseType: 'stream',
             timeout: 0,  // 大文件下载不设置超时
+            signal,
         })
 
         const totalBytes = parseInt(<string>response.headers['content-length'], 10)
@@ -259,6 +246,10 @@ export class ServerManager extends LlamaServerBase {
         response.data.pipe(writer)
 
         return new Promise((resolve, reject) => {
+            signal.addEventListener('abort', () => {
+                writer.destroy()
+                reject(new Error('下载已取消'))
+            })
             writer.on('finish', () => {
                 log(`${label} 下载完成`)
                 resolve(true)

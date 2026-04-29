@@ -11,14 +11,10 @@ const documentStore = useDocumentStore()
 const globalError = useGlobalErrorStore()
 documentStore.refreshDocuments()
 
-const serverStatus = ref<'idle' | 'starting' | 'running' | 'error'>('idle')
 const statusMessage = ref('')
-// const gpuAvailable = ref(false)
 const downloadProgress = ref({percent: 0, speed: '', phase: '', fileName: '', current: 0, total: 2})
 const isDownloading = ref(false)
 const modelsDir = ref('')
-const chatModelName = ref('')
-const embeddingModelName = ref('')
 const modelMode = ref<'local' | 'online'>('local')
 const onlineApiUrl = ref('')
 const onlineApiKey = ref('')
@@ -110,6 +106,7 @@ async function saveOnlineApi() {
     key: onlineApiKey.value,
     model: onlineModelName.value
   })
+  statusMessage.value = '保存成功'
 }
 </script>
 
@@ -136,15 +133,19 @@ async function saveOnlineApi() {
       <div class="status-card">
         <div class="status-row">
           <span class="label">API 地址:</span>
-          <input v-model="onlineApiUrl" @blur="saveOnlineApi" class="api-input" placeholder="https://api.openai.com/v1" />
+          <input v-model="onlineApiUrl" class="api-input" placeholder="https://api.openai.com/v1" />
         </div>
         <div class="status-row">
           <span class="label">API Key:</span>
-          <input v-model="onlineApiKey" @blur="saveOnlineApi" class="api-input" type="password" placeholder="sk-..." />
+          <input v-model="onlineApiKey" class="api-input" type="password" placeholder="sk-..." />
         </div>
         <div class="status-row">
           <span class="label">模型名称:</span>
-          <input v-model="onlineModelName" @blur="saveOnlineApi" class="api-input" placeholder="gpt-4o" />
+          <input v-model="onlineModelName" class="api-input" placeholder="gpt-4o" />
+        </div>
+        <div class="status-row">
+          <button class="btn btn-primary" @click="saveOnlineApi">保存</button>
+          <span v-if="statusMessage === '保存成功'" class="save-success">保存成功</span>
         </div>
       </div>
     </section>
@@ -174,7 +175,7 @@ async function saveOnlineApi() {
           <div class="download-meta">
             <span>{{ downloadProgress.percent }}%</span>
             <span>{{ downloadProgress.speed }}</span>
-            <span>阶段 {{ downloadProgress.current }}/{{ downloadProgress.total }}</span>
+<!--            <span>阶段 {{ downloadProgress.current }}/{{ downloadProgress.total }}</span>-->
           </div>
           <div class="actions">
             <button class="btn btn-warning" @click="cancelDownload">取消下载</button>
@@ -184,7 +185,7 @@ async function saveOnlineApi() {
           <div class="actions">
             <button
                 class="btn btn-secondary"
-                :disabled="serverStatus === 'starting'"
+                :disabled="isDownloading"
                 @click="downloadModel"
             >
               下载模型
@@ -206,19 +207,19 @@ async function saveOnlineApi() {
     </section>
 
     <!-- 模型信息 -->
-    <section class="settings-section">
-      <h2>模型信息</h2>
-      <div class="status-card">
-        <div class="status-row">
-          <span class="label">对话模型:</span>
-          <span class="value">{{ chatModelName || '未加载' }}</span>
-        </div>
-        <div class="status-row">
-          <span class="label">Embedding:</span>
-          <span class="value">{{ embeddingModelName || '未加载' }}</span>
-        </div>
-      </div>
-    </section>
+<!--    <section class="settings-section">-->
+<!--      <h2>模型信息</h2>-->
+<!--      <div class="status-card">-->
+<!--        <div class="status-row">-->
+<!--          <span class="label">对话模型:</span>-->
+<!--          <span class="value">{{ chatModelName || '未加载' }}</span>-->
+<!--        </div>-->
+<!--        <div class="status-row">-->
+<!--          <span class="label">Embedding:</span>-->
+<!--          <span class="value">{{ embeddingModelName || '未加载' }}</span>-->
+<!--        </div>-->
+<!--      </div>-->
+<!--    </section>-->
   </div>
 </template>
 
