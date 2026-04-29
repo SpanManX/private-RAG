@@ -146,6 +146,7 @@ const showLoading = computed(() => {
 .citation-item {
   display: flex;
   justify-content: space-between;
+  gap: 5px;
   align-items: center;
   font-size: 12px;
   color: #4b5563;

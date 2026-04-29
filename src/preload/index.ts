@@ -41,7 +41,10 @@ const api = {
             current: number
             total: number
         }) => void) =>
-            ipcRenderer.on('server:download-progress', (_event, progress) => callback(progress))
+            ipcRenderer.on('server:download-progress', (_event, progress) => callback(progress)),
+        /** 监听服务状态变化（事件驱动） */
+        onStatusChange: (callback: (status: { chatRunning: boolean; embeddingRunning: boolean }) => void) =>
+            ipcRenderer.on('server:status-changed', (_event, status) => callback(status))
     },
 
     // -------- Embedding 服务管理 --------
@@ -87,6 +90,12 @@ const api = {
             ipcRenderer.on('rag:error', (_event, error) => callback(error))
     },
 
+    // -------- 在线模式 RAG 问答 --------
+    online: {
+        /** 在线模式流式聊天：返回 prompt 和 citations */
+        chatStream: (question: string) => ipcRenderer.invoke('online:chat-stream', question)
+    },
+
     // -------- 文件对话框 --------
     dialog: {
         /** 打开文件选择对话框 */
@@ -100,7 +109,16 @@ const api = {
         /** 获取模型目录路径 */
         getModelsDir: () => ipcRenderer.invoke('config:get-models-dir'),
         /** 设置模型目录路径 */
-        setModelsDir: (dir: string) => ipcRenderer.invoke('config:set-models-dir', dir)
+        setModelsDir: (dir: string) => ipcRenderer.invoke('config:set-models-dir', dir),
+        /** 获取模型模式 */
+        getModelMode: () => ipcRenderer.invoke('config:get-model-mode'),
+        /** 设置模型模式 */
+        setModelMode: (mode: 'local' | 'online') => ipcRenderer.invoke('config:set-model-mode', mode),
+        /** 获取在线 API 配置 */
+        getOnlineApi: () => ipcRenderer.invoke('config:get-online-api'),
+        /** 设置在线 API 配置 */
+        setOnlineApi: (apiConfig: { url: string; key: string; model: string }) =>
+            ipcRenderer.invoke('config:set-online-api', apiConfig)
     },
 
     // -------- 全局错误提示 --------

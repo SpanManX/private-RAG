@@ -9,13 +9,14 @@
 
 import {app, shell, BrowserWindow, ipcMain, dialog} from 'electron'
 import {join} from 'path'
-import {electronApp, optimizer} from '@electron-toolkit/utils'
+import {electronApp, is, optimizer} from '@electron-toolkit/utils'
 import {initLogger, log} from './logger'
 import {ServerManager} from './serverManager'
 import {DocumentProcessor} from './documentProcessor'
 import {IndexManager} from './indexManager'
 import {RagEngine} from './ragEngine'
 import {ServerConfig, ServiceType} from './utils/serverUtils'
+import {getModelMode, setModelMode, getOnlineApiConfig, setOnlineApiConfig} from './store'
 
 // ============================================
 // 全局错误捕获（尽早注册，确保捕获所有阶段错误）
@@ -119,11 +120,11 @@ function createWindow(): BrowserWindow {
     })
 
     // 开发模式使用 Vite 开发的 URL，生产模式使用打包后的 HTML
-    // if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    //     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
-    // } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
-    // }
+    if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+        mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    } else {
+        mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    }
     return mainWindow
 }
 
@@ -156,14 +157,39 @@ async function initializeModules(): Promise<void> {
  * - config:* - 配置管理
  */
 function registerIpcHandlers(win: BrowserWindow): void {
+    // -------- 服务状态变化回调（监听进程退出/崩溃） --------
+    serverManager.onStatusChange = (running) => {
+        win.webContents.send('server:status-changed', {
+            chatRunning: running,
+            embeddingRunning: serverManager.embeddingManager.getStatus().state === 'running'
+        })
+    }
+    serverManager.embeddingManager.onStatusChange = (running) => {
+        win.webContents.send('server:status-changed', {
+            chatRunning: serverManager.getStatus().state === 'running',
+            embeddingRunning: running
+        })
+    }
+
     // -------- llama-server 服务管理 --------
     ipcMain.handle('server:status', () => serverManager.getStatus())
     ipcMain.handle('embedding:status', () => serverManager.embeddingManager.getStatus())
     ipcMain.handle('server:start', async () => {
         try {
-            // 仅在用户点击”启动服务”时启动两个服务
-            await serverManager.start()
-            await serverManager.embeddingManager.start()
+            const mode = getModelMode()
+            if (mode === 'online') {
+                // 在线模式：只启动 embedding 服务
+                await serverManager.embeddingManager.start()
+            } else {
+                // 本地模式：启动两个服务
+                await serverManager.start()
+                await serverManager.embeddingManager.start()
+            }
+            // 通知渲染进程服务状态变化
+            win.webContents.send('server:status-changed', {
+                chatRunning: serverManager.getStatus().state === 'running',
+                embeddingRunning: serverManager.embeddingManager.getStatus().state === 'running'
+            })
             return {success: true, status: serverManager.getStatus()}
         } catch (error) {
             log('启动服务失败:', error)
@@ -172,9 +198,20 @@ function registerIpcHandlers(win: BrowserWindow): void {
         }
     })
     ipcMain.handle('server:stop', async () => {
-        // 停止顺序：先 chat 服务，再 embedding 服务
-        await serverManager.stop()
-        await serverManager.embeddingManager.stop()
+        const mode = getModelMode()
+        if (mode === 'online') {
+            // 在线模式：只停止 embedding 服务
+            await serverManager.embeddingManager.stop()
+        } else {
+            // 本地模式：停止两个服务
+            await serverManager.stop()
+            await serverManager.embeddingManager.stop()
+        }
+        // 通知渲染进程服务状态变化
+        win.webContents.send('server:status-changed', {
+            chatRunning: serverManager.getStatus().state === 'running',
+            embeddingRunning: serverManager.embeddingManager.getStatus().state === 'running'
+        })
         return serverManager.getStatus()
     })
     ipcMain.handle('server:get-url', () => {
@@ -187,6 +224,23 @@ function registerIpcHandlers(win: BrowserWindow): void {
     ipcMain.handle('config:get-models-dir', () => serverManager.getModelsDir())
     ipcMain.handle('config:set-models-dir', (_event, dir: string) => {
         serverManager.updateModelsDir(dir)
+        return {success: true}
+    })
+    ipcMain.handle('config:get-model-mode', () => getModelMode())
+    ipcMain.handle('config:set-model-mode', async (_event, mode: 'local' | 'online') => {
+        try {
+            await serverManager.stop()
+            await serverManager.embeddingManager.stop()
+            setModelMode(mode)
+            return {success: true, mode}
+        } catch (error) {
+            log('模式切换失败:', error)
+            return {success: false, error: String(error)}
+        }
+    })
+    ipcMain.handle('config:get-online-api', () => getOnlineApiConfig())
+    ipcMain.handle('config:set-online-api', (_event, apiConfig: { url: string; key: string; model: string }) => {
+        setOnlineApiConfig(apiConfig)
         return {success: true}
     })
 
@@ -202,15 +256,23 @@ function registerIpcHandlers(win: BrowserWindow): void {
     // 导入单个文档：解析 → 分块 → 向量化 → 存储
     ipcMain.handle('document:import', async (_event, filePath: string) => {
         try {
-            // 导入前检查两个服务是否都在运行
-            const chatStatus = serverManager.getStatus().state
-            const embedStatus = serverManager.embeddingManager.getStatus().state
-
-            if (chatStatus !== 'running') {
-                return {success: false, error: '对话服务未启动。请先点击"启动服务"。'}
-            }
-            if (embedStatus !== 'running') {
-                return {success: false, error: 'Embedding 服务未启动。请先点击"启动服务"。'}
+            // 导入前检查服务是否运行（根据模式判断）
+            const mode = getModelMode()
+            if (mode === 'online') {
+                // 在线模式：只检查 embedding 服务
+                if (serverManager.embeddingManager.getStatus().state !== 'running') {
+                    return {success: false, error: 'Embedding 服务未启动。请先点击"启动服务"。'}
+                }
+            } else {
+                // 本地模式：检查两个服务
+                const chatStatus = serverManager.getStatus().state
+                const embedStatus = serverManager.embeddingManager.getStatus().state
+                if (chatStatus !== 'running') {
+                    return {success: false, error: '对话服务未启动。请先点击"启动服务"。'}
+                }
+                if (embedStatus !== 'running') {
+                    return {success: false, error: 'Embedding 服务未启动。请先点击"启动服务"。'}
+                }
             }
 
             const text = await documentProcessor.parse(filePath)
@@ -343,6 +405,20 @@ function registerIpcHandlers(win: BrowserWindow): void {
     })
 
     ipcMain.handle('rag:system-template', () => ragEngine.systemTemplate)
+
+    // -------- 在线模式 RAG 问答 --------
+    ipcMain.handle('online:chat-stream', async (_event, question: string) => {
+        try {
+            if (serverManager.embeddingManager.getStatus().state !== 'running') {
+                return {success: false, error: 'Embedding 服务未启动。请先点击"启动服务"。'}
+            }
+            const {prompt, citations} = await ragEngine.buildPrompt(question)
+            return {success: true, prompt, citations}
+        } catch (error) {
+            log('在线查询错误:', error)
+            return {success: false, error: String(error)}
+        }
+    })
 
     // -------- 文件选择对话框 --------
     ipcMain.handle('dialog:open-file', async () => {

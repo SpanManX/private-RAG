@@ -15,60 +15,72 @@ const isDownloading = ref(false)
 const modelsDir = ref('')
 const chatModelName = ref('')
 const embeddingModelName = ref('')
-let statusPollInterval: ReturnType<typeof setInterval> | null = null
+const modelMode = ref<'local' | 'online'>('local')
+const onlineApiUrl = ref('')
+const onlineApiKey = ref('')
+const onlineModelName = ref('')
+// let statusPollInterval: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
   await loadModelsDir()
-  await checkServerStatus()
-  startStatusPoll()
+  await loadModelMode()
+  // await checkServerStatus()
+  // startStatusPoll()
 })
 
-onUnmounted(() => {
-  stopStatusPoll()
-})
+// onUnmounted(() => {
+//   stopStatusPoll()
+// })
 
-function startStatusPoll() {
-  statusPollInterval = setInterval(checkServerStatus, 3000)
-}
+// function startStatusPoll() {
+//   statusPollInterval = setInterval(checkServerStatus, 3000)
+// }
 
-function stopStatusPoll() {
-  if (statusPollInterval) {
-    clearInterval(statusPollInterval)
-    statusPollInterval = null
-  }
-}
+// function stopStatusPoll() {
+//   if (statusPollInterval) {
+//     clearInterval(statusPollInterval)
+//     statusPollInterval = null
+//   }
+// }
 
-async function checkServerStatus() {
-  const status = await window.api.server.status()
-  serverStatus.value = status.state === 'running' ? 'running' : (status.state === 'error' ? 'error' : 'idle')
-  statusMessage.value = status.message
-  chatModelName.value = status.modelName || '未加载'
+// async function checkServerStatus() {
+//   const status = await window.api.server.status()
+//   const embeddingStatus = await window.api.embedding.status()
+//
+//   if (modelMode.value === 'online') {
+//     // 在线模式：只看 embedding 服务
+//     serverStatus.value = embeddingStatus.state === 'running' ? 'running' : (embeddingStatus.state === 'error' ? 'error' : 'idle')
+//   } else {
+//     // 本地模式：两个服务都要运行
+//     const bothRunning = status.state === 'running' && embeddingStatus.state === 'running'
+//     serverStatus.value = bothRunning ? 'running' : (status.state === 'error' || embeddingStatus.state === 'error' ? 'error' : 'idle')
+//   }
+//
+//   statusMessage.value = status.message
+//   chatModelName.value = status.modelName || '未加载'
+//   embeddingModelName.value = embeddingStatus.modelName || '未加载'
+// }
 
-  // 获取 embedding 状态
-  const embeddingStatus = await window.api.embedding.status()
-  embeddingModelName.value = embeddingStatus.modelName || '未加载'
-}
+// async function startServer() {
+//   serverStatus.value = 'starting'
+//   statusMessage.value = '正在启动模型服务...'
+//   try {
+//     const result = await window.api.server.start()
+//     if (!result.success) {
+//       serverStatus.value = 'error'
+//       statusMessage.value = result.error || '启动服务失败'
+//       return
+//     }
+//     await checkServerStatus()
+//   } catch (e) {
+//     serverStatus.value = 'error'
+//   }
+// }
 
-async function startServer() {
-  serverStatus.value = 'starting'
-  statusMessage.value = '正在启动模型服务...'
-  try {
-    const result = await window.api.server.start()
-    if (!result.success) {
-      serverStatus.value = 'error'
-      statusMessage.value = result.error || '启动服务失败'
-      return
-    }
-    await checkServerStatus()
-  } catch (e) {
-    serverStatus.value = 'error'
-  }
-}
-
-async function stopServer() {
-  await window.api.server.stop()
-  await checkServerStatus()
-}
+// async function stopServer() {
+//   await window.api.server.stop()
+//   await checkServerStatus()
+// }
 
 async function downloadModel() {
   isDownloading.value = true
@@ -115,6 +127,14 @@ async function loadModelsDir() {
   modelsDir.value = await window.api.config.getModelsDir()
 }
 
+async function loadModelMode() {
+  modelMode.value = await window.api.config.getModelMode()
+  const apiConfig = await window.api.config.getOnlineApi()
+  onlineApiUrl.value = apiConfig.url
+  onlineApiKey.value = apiConfig.key
+  onlineModelName.value = apiConfig.model
+}
+
 async function selectModelsDir() {
   const dir = await window.api.dialog.selectDirectory()
   if (dir) {
@@ -127,18 +147,33 @@ async function selectModelsDir() {
   }
 }
 
-function getStatusLabel(): string {
-  switch (serverStatus.value) {
-    case 'running':
-      return '服务运行中'
-    case 'starting':
-      return '启动中...'
-    case 'error':
-      return '服务异常'
-    default:
-      return '服务未启动'
+async function onModelModeChange(newMode: 'local' | 'online') {
+  const result = await window.api.config.setModelMode(newMode)
+  if (result.success) {
+    modelMode.value = newMode
   }
 }
+
+async function saveOnlineApi() {
+  await window.api.config.setOnlineApi({
+    url: onlineApiUrl.value,
+    key: onlineApiKey.value,
+    model: onlineModelName.value
+  })
+}
+
+// function getStatusLabel(): string {
+//   switch (serverStatus.value) {
+//     case 'running':
+//       return '服务运行中'
+//     case 'starting':
+//       return '启动中...'
+//     case 'error':
+//       return '服务异常'
+//     default:
+//       return '服务未启动'
+//   }
+// }
 </script>
 
 <template>
@@ -146,39 +181,72 @@ function getStatusLabel(): string {
     <h1>设置</h1>
 
     <!-- 模型服务状态 -->
+<!--    <section class="settings-section">-->
+<!--      <h2>模型服务</h2>-->
+<!--      <div class="status-card">-->
+<!--        <div class="status-row">-->
+<!--          <span class="label">状态:</span>-->
+<!--          <span class="status-badge" :class="serverStatus">{{ getStatusLabel() }}</span>-->
+<!--        </div>-->
+<!--        <div class="status-row">-->
+<!--          <span class="label">信息:</span>-->
+<!--          <span class="value">{{ statusMessage }}</span>-->
+<!--        </div>-->
+<!--        <div class="actions">-->
+<!--          <button-->
+<!--              v-if="serverStatus === 'running'"-->
+<!--              class="btn btn-danger"-->
+<!--              @click="stopServer"-->
+<!--          >-->
+<!--            停止服务-->
+<!--          </button>-->
+<!--          <button-->
+<!--              v-else-->
+<!--              class="btn btn-primary"-->
+<!--              :disabled="serverStatus === 'starting'"-->
+<!--              @click="startServer"-->
+<!--          >-->
+<!--            启动服务-->
+<!--          </button>-->
+<!--        </div>-->
+<!--      </div>-->
+<!--    </section>-->
+
+    <!-- 模型模式选择 -->
     <section class="settings-section">
-      <h2>模型服务</h2>
+      <h2>模型模式</h2>
       <div class="status-card">
         <div class="status-row">
-          <span class="label">状态:</span>
-          <span class="status-badge" :class="serverStatus">{{ getStatusLabel() }}</span>
-        </div>
-        <div class="status-row">
-          <span class="label">信息:</span>
-          <span class="value">{{ statusMessage }}</span>
-        </div>
-        <div class="actions">
-          <button
-              v-if="serverStatus === 'running'"
-              class="btn btn-danger"
-              @click="stopServer"
-          >
-            停止服务
-          </button>
-          <button
-              v-else
-              class="btn btn-primary"
-              :disabled="serverStatus === 'starting'"
-              @click="startServer"
-          >
-            启动服务
-          </button>
+          <span class="label">当前模式:</span>
+          <select v-model="modelMode" @change="onModelModeChange(modelMode)" class="mode-select">
+            <option value="local">本地大模型</option>
+            <option value="online">在线大模型</option>
+          </select>
         </div>
       </div>
     </section>
 
-    <!-- 模型下载 -->
-    <section class="settings-section">
+    <!-- 在线 API 配置 (仅在线模式显示) -->
+    <section v-if="modelMode === 'online'" class="settings-section">
+      <h2>在线 API 配置</h2>
+      <div class="status-card">
+        <div class="status-row">
+          <span class="label">API 地址:</span>
+          <input v-model="onlineApiUrl" @blur="saveOnlineApi" class="api-input" placeholder="https://api.openai.com/v1" />
+        </div>
+        <div class="status-row">
+          <span class="label">API Key:</span>
+          <input v-model="onlineApiKey" @blur="saveOnlineApi" class="api-input" type="password" placeholder="sk-..." />
+        </div>
+        <div class="status-row">
+          <span class="label">模型名称:</span>
+          <input v-model="onlineModelName" @blur="saveOnlineApi" class="api-input" placeholder="gpt-4o" />
+        </div>
+      </div>
+    </section>
+
+    <!-- 模型下载 (仅本地模式显示) -->
+    <section v-if="modelMode === 'local'" class="settings-section">
       <h2>模型下载</h2>
       <div class="status-card">
         <div class="status-row">
@@ -426,5 +494,23 @@ function getStatusLabel(): string {
   word-break: break-all;
   font-size: 13px;
   color: #6b7280;
+}
+
+/* 模式选择下拉 */
+.mode-select {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+  font-size: 14px;
+  background: white;
+}
+
+/* API 配置输入框 */
+.api-input {
+  flex: 1;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+  font-size: 14px;
 }
 </style>

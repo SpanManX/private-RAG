@@ -15,7 +15,7 @@ import {log} from './logger'
 import * as fs from 'node:fs'
 import axios from 'axios'
 import path from 'node:path'
-import {LlamaServerBase, ServerStatus} from './llamaServerBase'
+import {LlamaServerBase} from './llamaServerBase'
 import {ServerConfig, ServiceType} from './utils/serverUtils'
 import {EmbeddingServerManager} from './embeddingServerManager'
 import {ChildProcess, spawn} from "child_process";
@@ -37,8 +37,6 @@ export interface DownloadProgress {
  * 同时持有 EmbeddingServerManager 实例，用于管理向量服务
  */
 export class ServerManager extends LlamaServerBase {
-    /** Qwen 模型文件路径 */
-    private modelPath!: string
     /** 下载取消标记 */
     private cancellationToken: { cancelled: boolean } = {cancelled: false}
     /** 是否正在下载 */
@@ -49,6 +47,12 @@ export class ServerManager extends LlamaServerBase {
 
     /** Qwen 模型文件名 */
     private readonly MODEL_FILE = 'Qwen3-4B-Q5_K_M.gguf'
+
+    protected readonly serviceType = ServiceType.CHAT
+    protected readonly statusMessage = {
+        running: 'llama-server running on port {port}',
+        idle: 'Server not running'
+    }
 
     constructor() {
         super()
@@ -61,18 +65,6 @@ export class ServerManager extends LlamaServerBase {
         await super.refreshPaths()
         this.modelPath = this.findModelFile('Qwen3', '.gguf') || ''
         log(`[ServerManager] 模型路径: ${this.modelPath}`)
-    }
-
-    getStatus(): ServerStatus {
-        const state: ServerStatus['state'] = this.process ? 'running' : 'idle'
-        const port = ServerConfig.getPort(ServiceType.CHAT)
-        return {
-            state,
-            message: this.process ? `llama-server running on port ${port}` : 'Server not running',
-            gpuAvailable: this.gpuAvailable,
-            modelPath: this.modelPath,
-            modelName: this.modelPath ? this.modelPath.split(/[/\\]/).pop() : undefined
-        }
     }
 
     /**
@@ -105,6 +97,7 @@ export class ServerManager extends LlamaServerBase {
             process.on('exit', (code) => {
                 log(`llama-server 已退出，代码: ${code}`)
                 this.process = null
+                this.notifyStatusChange()
             })
 
             return process
@@ -148,6 +141,7 @@ export class ServerManager extends LlamaServerBase {
 
         this.process = this.spawnProcess(args)
         await this._waitForServer(port, 60000)
+        this.notifyStatusChange()
         log(`llama-server 启动成功，端口 ${port}`)
     }
 
@@ -156,6 +150,7 @@ export class ServerManager extends LlamaServerBase {
         if (this.process) {
             this.process.kill()
             this.process = null
+            this.notifyStatusChange()
             log('llama-server 已停止')
         }
     }
@@ -239,7 +234,7 @@ export class ServerManager extends LlamaServerBase {
             timeout: 0,  // 大文件下载不设置超时
         })
 
-        const totalBytes = parseInt(response.headers['content-length'], 10)
+        const totalBytes = parseInt(<string>response.headers['content-length'], 10)
         let downloadedBytes = 0
 
         // 流式下载，进度实时推送

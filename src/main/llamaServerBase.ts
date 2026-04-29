@@ -18,7 +18,7 @@ import {ChildProcess} from 'child_process'
 import {join} from 'path'
 import {log} from './logger'
 import {getModelsDir, setModelsDir} from './store'
-import {detectGpu, waitForServer} from './utils/serverUtils'
+import {detectGpu, waitForServer, ServiceType, ServerConfig} from './utils/serverUtils'
 import {findLlamaServerExe, getLlamaServerDir} from './utils/llamaServerUtils'
 import * as fs from 'fs'
 
@@ -39,7 +39,8 @@ export interface ServerStatus {
  * 子类需要实现：
  * - start(): 启动服务
  * - stop(): 停止服务
- * - getStatus(): 获取服务状态
+ * - serviceType: 服务类型（用于 getStatus）
+ * - statusMessage: 状态消息模板
  */
 export abstract class LlamaServerBase {
     /** llama-server 子进程 */
@@ -50,9 +51,45 @@ export abstract class LlamaServerBase {
     protected gpuAvailable!: boolean
     /** llama-server.exe 完整路径 */
     protected llamaServerPath!: string
+    /** 模型文件路径 */
+    protected modelPath!: string
+
+    /** 服务类型（子类必须定义） */
+    protected abstract readonly serviceType: ServiceType
+    /** 状态消息模板 */
+    protected abstract readonly statusMessage: { running: string; idle: string }
+    /** 状态变化回调（用于通知外部，如渲染进程） */
+    public onStatusChange?: (running: boolean) => void
 
     constructor() {
         this.gpuAvailable = detectGpu()
+    }
+
+    /**
+     * 通知状态变化
+     */
+    protected notifyStatusChange(): void {
+        if (this.onStatusChange) {
+            this.onStatusChange(this.process !== null)
+        }
+    }
+
+    /**
+     * 获取服务状态（基类实现）
+     * 子类通过 serviceType 和 statusMessage 自定义消息
+     */
+    getStatus(): ServerStatus {
+        const state: ServerStatus['state'] = this.process ? 'running' : 'idle'
+        const port = ServerConfig.getPort(this.serviceType)
+        return {
+            state,
+            message: this.process
+                ? this.statusMessage.running.replace('{port}', String(port))
+                : this.statusMessage.idle,
+            gpuAvailable: this.gpuAvailable,
+            modelPath: this.modelPath,
+            modelName: this.modelPath ? this.modelPath.split(/[/\\]/).pop() : undefined
+        }
     }
 
     /**
@@ -143,9 +180,6 @@ export abstract class LlamaServerBase {
     protected async _waitForServer(port: number, timeout: number): Promise<void> {
         await waitForServer(port, timeout)
     }
-
-    /** 获取服务状态（子类实现） */
-    abstract getStatus(): ServerStatus
 
     /** 启动服务（子类实现） */
     abstract start(): Promise<void>

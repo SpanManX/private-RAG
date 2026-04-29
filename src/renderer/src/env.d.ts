@@ -42,6 +42,10 @@ interface Window {
                 current: number
                 total: number
             }) => void) => void
+            onStatusChange: (callback: (status: {
+                chatRunning: boolean
+                embeddingRunning: boolean
+            }) => void) => void
         }
         document: {
             import: (filePath: string) => Promise<{
@@ -92,6 +96,18 @@ interface Window {
         config: {
             getModelsDir: () => Promise<string>
             setModelsDir: (dir: string) => Promise<{ success: boolean }>
+            getModelMode: () => Promise<'local' | 'online'>
+            setModelMode: (mode: 'local' | 'online') => Promise<{ success: boolean; mode?: 'local' | 'online'; error?: string }>
+            getOnlineApi: () => Promise<{ url: string; key: string; model: string }>
+            setOnlineApi: (apiConfig: { url: string; key: string; model: string }) => Promise<{ success: boolean }>
+        }
+        online: {
+            chatStream: (question: string) => Promise<{
+                success: boolean
+                prompt?: string
+                citations?: Array<{ docId: string; fileName: string; score: number; excerpt: string }>
+                error?: string
+            }>
         }
         embedding: {
             status: () => Promise<{

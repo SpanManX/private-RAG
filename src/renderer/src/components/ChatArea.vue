@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {ref, nextTick, onMounted, onUnmounted} from 'vue'
+import {ref, nextTick, onMounted} from 'vue'
 import {useChatStore} from '@/stores/chatStore'
 import {useDocumentStore} from '@/stores/documentStore'
 import MessageBubble from './MessageBubble.vue'
@@ -10,13 +10,9 @@ const inputText = ref('')
 const chatContainer = ref<HTMLElement | null>(null)
 const showOfflineTip = ref(false)
 
-onMounted(() => {
-  documentStore.startServerPoll()
+onMounted(async () => {
+  await documentStore.fetchServerStatus()
   scrollToBottom()
-})
-
-onUnmounted(() => {
-  documentStore.stopServerPoll()
 })
 
 async function handleSend(): Promise<void> {

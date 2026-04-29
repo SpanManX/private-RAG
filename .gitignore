@@ -10,3 +10,4 @@ CONTRIBUTING.md
 .*
 .DS_Store
 *.log*
+*.tsbuildinfo

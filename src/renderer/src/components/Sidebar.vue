@@ -32,10 +32,22 @@ function stopStatusPoll() {
 }
 
 async function checkServerStatus() {
-  const status = await window.api.server.status()
-  serverStatus.value = status.state === 'running' ? 'running' : (status.state === 'error' ? 'error' : 'idle')
-  statusMessage.value = status.message
-  gpuAvailable.value = status.gpuAvailable ?? false
+  const mode = await window.api.config.getModelMode()
+  if (mode === 'online') {
+    // 在线模式：检查 embedding 服务
+    const embeddingStatus = await window.api.embedding.status()
+    serverStatus.value = embeddingStatus.state === 'running' ? 'running' : (embeddingStatus.state === 'error' ? 'error' : 'idle')
+    statusMessage.value = embeddingStatus.message || ''
+    gpuAvailable.value = false
+  } else {
+    // 本地模式：检查 llama-server + embedding 两个服务
+    const status = await window.api.server.status()
+    const embeddingStatus = await window.api.embedding.status()
+    const bothRunning = status.state === 'running' && embeddingStatus.state === 'running'
+    serverStatus.value = bothRunning ? 'running' : (status.state === 'error' || embeddingStatus.state === 'error' ? 'error' : 'idle')
+    statusMessage.value = status.message
+    gpuAvailable.value = status.gpuAvailable ?? false
+  }
 }
 
 async function toggleServer() {

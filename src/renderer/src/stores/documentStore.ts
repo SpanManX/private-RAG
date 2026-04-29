@@ -8,6 +8,7 @@
  *
  * 与主进程通信：
  * - 通过 window.api.document.* 调用 IPC
+ * - 通过 window.api.server.onStatusChange 监听服务状态变化
  */
 
 import {defineStore} from 'pinia'
@@ -43,6 +44,8 @@ export const useDocumentStore = defineStore('document', () => {
     const isImporting = ref(false)
     /** 服务是否运行中 */
     const isServerRunning = ref(false)
+    /** 模型模式 */
+    const modelMode = ref<'local' | 'online'>('local')
     /** 导入进度 */
     const importProgress = ref<ImportProgress>({
         phase: 'idle',
@@ -54,24 +57,31 @@ export const useDocumentStore = defineStore('document', () => {
         percent: 0
     })
 
-    let serverPollInterval: ReturnType<typeof setInterval> | null = null
-
+    // ===== 服务状态监听 =====
+    // 初始化时立即获取一次状态，后续通过事件更新
     async function fetchServerStatus(): Promise<void> {
-        const status = await window.api.server.status()
-        isServerRunning.value = status.state === 'running'
-    }
+        const mode = await window.api.config.getModelMode()
+        modelMode.value = mode
 
-    function startServerPoll(): void {
-        fetchServerStatus()
-        serverPollInterval = setInterval(fetchServerStatus, 3000)
-    }
-
-    function stopServerPoll(): void {
-        if (serverPollInterval) {
-            clearInterval(serverPollInterval)
-            serverPollInterval = null
+        if (mode === 'online') {
+            const embeddingStatus = await window.api.embedding.status()
+            isServerRunning.value = embeddingStatus.state === 'running'
+        } else {
+            const status = await window.api.server.status()
+            const embeddingStatus = await window.api.embedding.status()
+            isServerRunning.value = status.state === 'running' && embeddingStatus.state === 'running'
         }
     }
+
+    // 监听主进程发送的服务状态变化事件
+    window.api.server.onStatusChange((status) => {
+        const mode = modelMode.value
+        if (mode === 'online') {
+            isServerRunning.value = status.embeddingRunning
+        } else {
+            isServerRunning.value = status.chatRunning && status.embeddingRunning
+        }
+    })
 
     // ===== 操作 =====
 
@@ -164,9 +174,9 @@ export const useDocumentStore = defineStore('document', () => {
         documents,
         isImporting,
         isServerRunning,
+        modelMode,
         importProgress,
-        startServerPoll,
-        stopServerPoll,
+        fetchServerStatus,
         refreshDocuments,
         importFile,
         importBatch,

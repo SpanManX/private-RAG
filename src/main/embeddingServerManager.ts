@@ -13,7 +13,7 @@ import {join} from 'path'
 import {existsSync} from 'fs'
 import {log} from './logger'
 import * as fs from 'fs'
-import {LlamaServerBase, ServerStatus} from './llamaServerBase'
+import {LlamaServerBase} from './llamaServerBase'
 import {ServerConfig, ServiceType} from './utils/serverUtils'
 import {getAppResourcesDir} from './utils/llamaServerUtils'
 
@@ -31,8 +31,11 @@ export interface EmbeddingServerStatus {
  * bge 模型必须使用 --pooling cls 参数，否则向量质量会严重下降
  */
 export class EmbeddingServerManager extends LlamaServerBase {
-    /** bge 模型文件路径 */
-    private modelPath!: string
+    protected readonly serviceType = ServiceType.EMBEDDING
+    protected readonly statusMessage = {
+        running: 'Embedding server running on port {port}',
+        idle: 'Embedding server not running'
+    }
 
     constructor() {
         super()
@@ -62,18 +65,6 @@ export class EmbeddingServerManager extends LlamaServerBase {
             return modelFile ? join(modelDir, modelFile) : ''
         } catch {
             return ''
-        }
-    }
-
-    getStatus(): ServerStatus {
-        const state: ServerStatus['state'] = this.process ? 'running' : 'idle'
-        const port = ServerConfig.getPort(ServiceType.EMBEDDING)
-        return {
-            state,
-            message: this.process ? `Embedding server running on port ${port}` : 'Embedding server not running',
-            gpuAvailable: this.gpuAvailable,
-            modelPath: this.modelPath,
-            modelName: this.modelPath ? this.modelPath.split(/[/\\]/).pop() : undefined
         }
     }
 
@@ -134,10 +125,12 @@ export class EmbeddingServerManager extends LlamaServerBase {
         this.process.on('exit', (code) => {
             log(`[Embedding] embedding-server 已退出，代码: ${code}`)
             this.process = null
+            this.notifyStatusChange()
         })
 
         // GPU 冷启动较慢，增加等待时间到 90s
         await this._waitForServer(port, 90000)
+        this.notifyStatusChange()
         log(`[Embedding] embedding-server 启动成功，端口 ${port}`)
     }
 
@@ -146,6 +139,7 @@ export class EmbeddingServerManager extends LlamaServerBase {
         if (this.process) {
             this.process.kill()
             this.process = null
+            this.notifyStatusChange()
             log('[Embedding] embedding-server 已停止')
         }
     }

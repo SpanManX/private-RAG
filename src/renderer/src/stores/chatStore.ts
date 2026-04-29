@@ -1,6 +1,6 @@
 import {defineStore} from 'pinia'
 import {ref} from 'vue'
-import {fetchEventSource} from '@microsoft/fetch-event-source'
+import {fetchEventSource, FetchEventSourceInit} from '@microsoft/fetch-event-source'
 
 export interface Message {
     id: string
@@ -17,13 +17,67 @@ export interface Citation {
     excerpt: string
 }
 
+let inThink = false
+
+/**
+ * SSE 事件处理器工厂
+ * 抽取在线/本地模式的公共逻辑，仅内容回调不同
+ */
+function createSSEHandlers(
+    msg: Message | undefined,
+    ctrl: AbortController,
+    filterThink: boolean
+): Pick<FetchEventSourceInit, 'onmessage' | 'onerror'> {
+    // 用于跨调用追踪是否处于 <think> 块内
+
+    return {
+        onmessage(ev) {
+            if (ev.data) {
+                try {
+                    const json = JSON.parse(ev.data)
+                    if (json.choices?.[0]?.delta?.content) {
+                        const content = json.choices[0].delta.content
+                        if (filterThink) {
+                            // 在线模式：过滤 <think> 标签
+                            if (content.startsWith('<think>')) {
+                                inThink = true
+                            }
+                            if (content.endsWith('</think>') || content.startsWith('</think>')) {
+                                inThink = false
+                                // 移除标签残留的换行
+                                const cleaned = content.replace('</think>', '')
+                                msg!.content += cleaned
+                            } else if (!inThink) {
+                                msg!.content += content
+                            }
+                        } else {
+                            msg!.content += content
+                        }
+                    }
+                    if (json.choices?.[0]?.finish_reason === 'stop') {
+                        ctrl.abort()
+                    }
+                } catch {
+                }
+            }
+        },
+        onerror(error) {
+            ctrl.abort()
+            console.error('SSE 错误:', error)
+            if (msg) {
+                msg.content += `错误: ${error}`
+            }
+            throw error
+        }
+    }
+}
+
 export const useChatStore = defineStore('chat', () => {
     const messages = ref<Message[]>([])
     const isGenerating = ref(false)
-    const currentCtrl = ref<AbortController | null>(null)  // 当前请求的 AbortController
+    const currentCtrl = ref<AbortController | null>(null)
 
     async function sendMessage(question: string): Promise<void> {
-        // 添加用户消息
         const userMessage: Message = {
             id: crypto.randomUUID(),
             role: 'user',
@@ -32,7 +86,6 @@ export const useChatStore = defineStore('chat', () => {
         }
         messages.value.push(userMessage)
 
-        // 添加占位 AI 消息
         const aiMessageId = crypto.randomUUID()
         const aiMessage: Message = {
             id: aiMessageId,
@@ -44,11 +97,16 @@ export const useChatStore = defineStore('chat', () => {
         isGenerating.value = true
 
         try {
-            // 获取 prompt 和引用
-            const result = await window.api.rag.queryStream(question)
+            const modelMode = await window.api.config.getModelMode()
 
+            let result
+            if (modelMode === 'online') {
+                result = await window.api.online.chatStream(question)
+            } else {
+                result = await window.api.rag.queryStream(question)
+            }
+            const msg = messages.value.find((m) => m.id === aiMessageId)
             if (!result.success || result.error) {
-                const msg = messages.value.find((m) => m.id === aiMessageId)
                 if (msg) {
                     msg.content = `错误: ${result.error || '未知错误'}`
                 }
@@ -56,57 +114,51 @@ export const useChatStore = defineStore('chat', () => {
                 return
             }
 
-            // 保存引用
-            const msg = messages.value.find((m) => m.id === aiMessageId)
             if (msg) {
                 msg.citations = result.citations
             }
 
-            // 使用 fetch-event-source 接收 SSE 流
             const ctrl = new AbortController()
-            currentCtrl.value = ctrl  // 保存引用供 stopGenerating 使用
-            // 获取当前对话服务的 URL（动态端口）
-            const serverUrl = await window.api.server.getServerUrl()
-            await fetchEventSource(`${serverUrl}/v1/chat/completions`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    messages: [await window.api.rag.systemTemplate(), {role: 'user', content: result.prompt}],
-                    stream: true,
-                    return_progress : true,   // 返回进度信息
-                    timings_per_token : true, // 逐词耗时统计
-                    temperature: 0.1,
-                    max_tokens: 2048
-                }),
-                signal: ctrl.signal,
-                onmessage(ev) {
-                    if (ev.data) {
-                        try {
-                            const json = JSON.parse(ev.data)
-                            if (json.choices?.[0]?.delta?.content) {
-                                const content = json.choices[0].delta.content
-                                const msg = messages.value.find((m) => m.id === aiMessageId)
-                                if (msg) {
-                                    msg.content += content
-                                }
-                            }
-                            if (json.choices?.[0]?.finish_reason === 'stop') {
-                                ctrl.abort()
-                            }
-                        } catch {
-                        }
-                    }
-                },
-                onerror(error) {
-                    ctrl.abort()
-                    console.error('SSE 错误:', error)
-                    const msg = messages.value.find((m) => m.id === aiMessageId)
-                    if (msg) {
-                        msg.content += `错误: ${error}`
-                    }
-                    throw error; // 抛出错误以停止自动重试
-                }
-            })
+            currentCtrl.value = ctrl
+
+            if (modelMode === 'online') {
+                const apiConfig = await window.api.config.getOnlineApi()
+                const systemTemplate = await window.api.rag.systemTemplate()
+                await fetchEventSource(`${apiConfig.url}/chat/completions`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiConfig.key}`
+                    },
+                    body: JSON.stringify({
+                        model: apiConfig.model,
+                        temperature: 0.1,
+                        messages: [
+                            systemTemplate,
+                            {role: 'user', content: result.prompt}
+                        ],
+                        stream: true
+                    }),
+                    signal: ctrl.signal,
+                    ...createSSEHandlers(msg, ctrl, true)  // filterThink = true
+                })
+            } else {
+                const serverUrl = await window.api.server.getServerUrl()
+                await fetchEventSource(`${serverUrl}/v1/chat/completions`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        messages: [await window.api.rag.systemTemplate(), {role: 'user', content: result.prompt}],
+                        stream: true,
+                        return_progress: true,
+                        timings_per_token: true,
+                        temperature: 0.1,
+                        max_tokens: 2048
+                    }),
+                    signal: ctrl.signal,
+                    ...createSSEHandlers(msg, ctrl, false)  // filterThink = false
+                })
+            }
         } catch (error) {
             const msg = messages.value.find((m) => m.id === aiMessageId)
             if (msg) {
@@ -122,7 +174,6 @@ export const useChatStore = defineStore('chat', () => {
         messages.value = []
     }
 
-    /** 停止当前正在生成的响应 */
     function stopGenerating(): void {
         if (currentCtrl.value) {
             currentCtrl.value.abort()

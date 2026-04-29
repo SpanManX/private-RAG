@@ -18,7 +18,7 @@
  * - .txt - 纯文本文件
  */
 
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useDocumentStore } from '@/stores/documentStore'
 
 // 定义组件发出的事件
@@ -36,12 +36,8 @@ const isDragging = ref(false)
 /** 服务未启动提示 */
 const serverOfflineTip = ref(false)
 
-onMounted(() => {
-  documentStore.startServerPoll()
-})
-
-onUnmounted(() => {
-  documentStore.stopServerPoll()
+onMounted(async () => {
+  await documentStore.fetchServerStatus()
 })
 
 /**
