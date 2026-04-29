@@ -58,8 +58,6 @@ export abstract class LlamaServerBase {
     protected abstract readonly serviceType: ServiceType
     /** 状态消息模板 */
     protected abstract readonly statusMessage: { running: string; idle: string }
-    /** 状态变化回调（用于通知外部，如渲染进程） */
-    public onStatusChange?: (running: boolean) => void
 
     constructor() {
         this.gpuAvailable = detectGpu()
@@ -68,15 +66,6 @@ export abstract class LlamaServerBase {
     /** 公开访问 GPU 可用性 */
     public getGpuAvailable(): boolean {
         return this.gpuAvailable
-    }
-
-    /**
-     * 通知状态变化
-     */
-    protected notifyStatusChange(): void {
-        if (this.onStatusChange) {
-            this.onStatusChange(this.process !== null)
-        }
     }
 
     /**

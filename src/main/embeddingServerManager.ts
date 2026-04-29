@@ -125,12 +125,10 @@ export class EmbeddingServerManager extends LlamaServerBase {
         this.process.on('exit', (code) => {
             log(`[Embedding] embedding-server 已退出，代码: ${code}`)
             this.process = null
-            this.notifyStatusChange()
         })
 
         // GPU 冷启动较慢，增加等待时间到 90s
         await this._waitForServer(port, 90000)
-        this.notifyStatusChange()
         log(`[Embedding] embedding-server 启动成功，端口 ${port}`)
     }
 
@@ -139,7 +137,6 @@ export class EmbeddingServerManager extends LlamaServerBase {
         if (this.process) {
             this.process.kill()
             this.process = null
-            this.notifyStatusChange()
             log('[Embedding] embedding-server 已停止')
         }
     }

@@ -17,7 +17,6 @@ import {IndexManager} from './indexManager'
 import {RagEngine} from './ragEngine'
 import {ServerConfig, ServiceType} from './utils/serverUtils'
 import {getModelMode, setModelMode, getOnlineApiConfig, setOnlineApiConfig} from './store'
-import {setTransitioning, clearTransition} from './utils/notifyStatus'
 
 // ============================================
 // 全局错误捕获（尽早注册，确保捕获所有阶段错误）
@@ -173,7 +172,6 @@ function registerIpcHandlers(win: BrowserWindow): void {
     ipcMain.handle('server:status', () => serverManager.getStatus())
     ipcMain.handle('embedding:status', () => serverManager.embeddingManager.getStatus())
     ipcMain.handle('server:start', async () => {
-        setTransitioning()
         try {
             const mode = getModelMode()
             if (mode === 'online') {
@@ -185,17 +183,13 @@ function registerIpcHandlers(win: BrowserWindow): void {
             sendStatusChange()
             return {success: true, status: serverManager.getStatus()}
         } catch (error) {
-            clearTransition()
             sendStatusChange()
             log('启动服务失败:', error)
             win.webContents.send('global:error', String(error))
             throw error
-        } finally {
-            clearTransition()
         }
     })
     ipcMain.handle('server:stop', async () => {
-        setTransitioning()
         try {
             const mode = getModelMode()
             if (mode === 'online') {
@@ -204,10 +198,9 @@ function registerIpcHandlers(win: BrowserWindow): void {
                 await serverManager.stop()
                 await serverManager.embeddingManager.stop()
             }
-            sendStatusChange()
             return serverManager.getStatus()
         } finally {
-            clearTransition()
+            sendStatusChange()
         }
     })
     ipcMain.handle('server:get-url', () => {

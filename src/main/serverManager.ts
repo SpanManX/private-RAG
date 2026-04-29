@@ -97,7 +97,6 @@ export class ServerManager extends LlamaServerBase {
             process.on('exit', (code) => {
                 log(`llama-server 已退出，代码: ${code}`)
                 this.process = null
-                this.notifyStatusChange()
             })
 
             return process
@@ -141,7 +140,6 @@ export class ServerManager extends LlamaServerBase {
 
         this.process = this.spawnProcess(args)
         await this._waitForServer(port, 60000)
-        this.notifyStatusChange()
         log(`llama-server 启动成功，端口 ${port}`)
     }
 
@@ -150,7 +148,6 @@ export class ServerManager extends LlamaServerBase {
         if (this.process) {
             this.process.kill()
             this.process = null
-            this.notifyStatusChange()
             log('llama-server 已停止')
         }
     }
