@@ -45,6 +45,7 @@ interface Window {
             onStatusChange: (callback: (status: {
                 chatRunning: boolean
                 embeddingRunning: boolean
+                gpuAvailable: boolean
             }) => void) => void
         }
         document: {

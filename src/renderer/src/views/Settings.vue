@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {onMounted, ref, onUnmounted} from 'vue'
+import {onMounted, ref} from 'vue'
 import {useDocumentStore} from '@/stores/documentStore'
 import {useGlobalErrorStore} from '@/stores/globalErrorStore'
 

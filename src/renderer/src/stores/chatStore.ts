@@ -17,7 +17,39 @@ export interface Citation {
     excerpt: string
 }
 
-let inThink = false
+function createThinkFilter() {
+    let inThink = false
+    let buffer = ''
+
+    return (chunk: string) => {
+        buffer += chunk
+        let out = ''
+
+        while (buffer.length) {
+            if (!inThink) {
+                const i = buffer.indexOf('<think>')
+                if (i === -1) {
+                    out += buffer
+                    buffer = ''
+                } else {
+                    out += buffer.slice(0, i)
+                    buffer = buffer.slice(i + 7)
+                    inThink = true
+                }
+            } else {
+                const i = buffer.indexOf('</think>')
+                if (i === -1) {
+                    buffer = ''
+                } else {
+                    buffer = buffer.slice(i + 8)
+                    inThink = false
+                }
+            }
+        }
+
+        return out
+    }
+}
 
 /**
  * SSE 事件处理器工厂
@@ -28,46 +60,38 @@ function createSSEHandlers(
     ctrl: AbortController,
     filterThink: boolean
 ): Pick<FetchEventSourceInit, 'onmessage' | 'onerror'> {
-    // 用于跨调用追踪是否处于 <think> 块内
+    const thinkFilter = filterThink ? createThinkFilter() : null
 
     return {
         onmessage(ev) {
-            if (ev.data) {
-                try {
-                    const json = JSON.parse(ev.data)
-                    if (json.choices?.[0]?.delta?.content) {
-                        const content = json.choices[0].delta.content
-                        if (filterThink) {
-                            console.log(content)
-                            // 在线模式：过滤 <think> 标签
-                            if (content.startsWith('<think>')) {
-                                inThink = true
-                            }
-                            if (content.endsWith('</think>') || content.startsWith('</think>')) {
-                                inThink = false
-                                // 移除标签残留的换行
-                                const cleaned = content.replace('</think>', '')
-                                msg!.content += cleaned
-                            } else if (!inThink) {
-                                msg!.content += content
-                            }
-                        } else {
-                            msg!.content += content
-                        }
-                    }
-                    if (json.choices?.[0]?.finish_reason === 'stop') {
-                        ctrl.abort()
-                    }
-                } catch {
+            if (!ev.data || !msg) return
+
+            try {
+                const json = JSON.parse(ev.data)
+
+                const content =
+                    json.choices?.[0]?.delta?.content ??
+                    json.choices?.[0]?.message?.content
+
+                if (!content) return
+
+                msg.content += thinkFilter
+                    ? thinkFilter(content)
+                    : content
+
+                if (json.choices?.[0]?.finish_reason === 'stop') {
+                    ctrl.abort()
                 }
+
+            } catch (e) {
+                console.error('SSE parse error:', ev.data)
             }
         },
+
         onerror(error) {
             ctrl.abort()
             console.error('SSE 错误:', error)
-            if (msg) {
-                msg.content += `错误: ${error}`
-            }
+            if (msg) msg.content += `错误: ${error}`
             throw error
         }
     }

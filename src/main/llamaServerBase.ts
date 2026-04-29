@@ -65,6 +65,11 @@ export abstract class LlamaServerBase {
         this.gpuAvailable = detectGpu()
     }
 
+    /** 公开访问 GPU 可用性 */
+    public getGpuAvailable(): boolean {
+        return this.gpuAvailable
+    }
+
     /**
      * 通知状态变化
      */

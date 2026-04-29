@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {ref, onMounted, onUnmounted} from 'vue'
+import {ref, onMounted} from 'vue'
 import {useRoute} from 'vue-router'
 import DocList from './DocList.vue'
 import FileUploader from './FileUploader.vue'
@@ -7,47 +7,31 @@ import FileUploader from './FileUploader.vue'
 const route = useRoute()
 
 const serverStatus = ref<'idle' | 'starting' | 'running' | 'error'>('idle')
-const statusMessage = ref('')
 const gpuAvailable = ref(false)
-let statusPollInterval: ReturnType<typeof setInterval> | null = null
+const modelMode = ref<'local' | 'online'>('local')
 
 onMounted(async () => {
-  await checkServerStatus()
-  startStatusPoll()
+  // 初始状态
+  modelMode.value = await window.api.config.getModelMode()
+  const status = await window.api.server.status()
+  const embeddingStatus = await window.api.embedding.status()
+  updateStatus(status.state, embeddingStatus.state, status.gpuAvailable ?? false)
+
+  // 监听服务状态变化
+  window.api.server.onStatusChange(({chatRunning, embeddingRunning, gpuAvailable: gpu}) => {
+    gpuAvailable.value = gpu
+    const isRunning = modelMode.value === 'online'
+      ? embeddingRunning
+      : (chatRunning && embeddingRunning)
+    serverStatus.value = isRunning ? 'running' : 'idle'
+  })
 })
 
-onUnmounted(() => {
-  stopStatusPoll()
-})
-
-function startStatusPoll() {
-  statusPollInterval = setInterval(checkServerStatus, 3000)
-}
-
-function stopStatusPoll() {
-  if (statusPollInterval) {
-    clearInterval(statusPollInterval)
-    statusPollInterval = null
-  }
-}
-
-async function checkServerStatus() {
-  const mode = await window.api.config.getModelMode()
-  if (mode === 'online') {
-    // 在线模式：检查 embedding 服务
-    const embeddingStatus = await window.api.embedding.status()
-    serverStatus.value = embeddingStatus.state === 'running' ? 'running' : (embeddingStatus.state === 'error' ? 'error' : 'idle')
-    statusMessage.value = embeddingStatus.message || ''
-    gpuAvailable.value = false
-  } else {
-    // 本地模式：检查 llama-server + embedding 两个服务
-    const status = await window.api.server.status()
-    const embeddingStatus = await window.api.embedding.status()
-    const bothRunning = status.state === 'running' && embeddingStatus.state === 'running'
-    serverStatus.value = bothRunning ? 'running' : (status.state === 'error' || embeddingStatus.state === 'error' ? 'error' : 'idle')
-    statusMessage.value = status.message
-    gpuAvailable.value = status.gpuAvailable ?? false
-  }
+function updateStatus(chatState: string, embedState: string, gpu: boolean) {
+  const bothRunning = chatState === 'running' && embedState === 'running'
+  const anyError = chatState === 'error' || embedState === 'error'
+  serverStatus.value = bothRunning ? 'running' : (anyError ? 'error' : 'idle')
+  gpuAvailable.value = gpu
 }
 
 async function toggleServer() {
@@ -55,15 +39,12 @@ async function toggleServer() {
     await window.api.server.stop()
   } else {
     serverStatus.value = 'starting'
-    statusMessage.value = '正在启动...'
     try {
       await window.api.server.start()
-    } catch (e: any) {
-      statusMessage.value = '启动失败'
+    } catch {
       serverStatus.value = 'error'
     }
   }
-  await checkServerStatus()
 }
 
 function getStatusLabel(): string {

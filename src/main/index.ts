@@ -17,6 +17,7 @@ import {IndexManager} from './indexManager'
 import {RagEngine} from './ragEngine'
 import {ServerConfig, ServiceType} from './utils/serverUtils'
 import {getModelMode, setModelMode, getOnlineApiConfig, setOnlineApiConfig} from './store'
+import {setTransitioning, clearTransition} from './utils/notifyStatus'
 
 // ============================================
 // 全局错误捕获（尽早注册，确保捕获所有阶段错误）
@@ -157,17 +158,14 @@ async function initializeModules(): Promise<void> {
  * - config:* - 配置管理
  */
 function registerIpcHandlers(win: BrowserWindow): void {
-    // -------- 服务状态变化回调（监听进程退出/崩溃） --------
-    serverManager.onStatusChange = (running) => {
+    // -------- 发送服务状态变化 --------
+    const sendStatusChange = () => {
+        const chatRunning = serverManager.getStatus().state === 'running'
+        const embeddingRunning = serverManager.embeddingManager.getStatus().state === 'running'
         win.webContents.send('server:status-changed', {
-            chatRunning: running,
-            embeddingRunning: serverManager.embeddingManager.getStatus().state === 'running'
-        })
-    }
-    serverManager.embeddingManager.onStatusChange = (running) => {
-        win.webContents.send('server:status-changed', {
-            chatRunning: serverManager.getStatus().state === 'running',
-            embeddingRunning: running
+            chatRunning,
+            embeddingRunning,
+            gpuAvailable: serverManager.getGpuAvailable()
         })
     }
 
@@ -175,44 +173,42 @@ function registerIpcHandlers(win: BrowserWindow): void {
     ipcMain.handle('server:status', () => serverManager.getStatus())
     ipcMain.handle('embedding:status', () => serverManager.embeddingManager.getStatus())
     ipcMain.handle('server:start', async () => {
+        setTransitioning()
         try {
             const mode = getModelMode()
             if (mode === 'online') {
-                // 在线模式：只启动 embedding 服务
                 await serverManager.embeddingManager.start()
             } else {
-                // 本地模式：启动两个服务
                 await serverManager.start()
                 await serverManager.embeddingManager.start()
             }
-            // 通知渲染进程服务状态变化
-            win.webContents.send('server:status-changed', {
-                chatRunning: serverManager.getStatus().state === 'running',
-                embeddingRunning: serverManager.embeddingManager.getStatus().state === 'running'
-            })
+            sendStatusChange()
             return {success: true, status: serverManager.getStatus()}
         } catch (error) {
+            clearTransition()
+            sendStatusChange()
             log('启动服务失败:', error)
             win.webContents.send('global:error', String(error))
-            return {success: false, error: String(error), status: serverManager.getStatus()}
+            throw error
+        } finally {
+            clearTransition()
         }
     })
     ipcMain.handle('server:stop', async () => {
-        const mode = getModelMode()
-        if (mode === 'online') {
-            // 在线模式：只停止 embedding 服务
-            await serverManager.embeddingManager.stop()
-        } else {
-            // 本地模式：停止两个服务
-            await serverManager.stop()
-            await serverManager.embeddingManager.stop()
+        setTransitioning()
+        try {
+            const mode = getModelMode()
+            if (mode === 'online') {
+                await serverManager.embeddingManager.stop()
+            } else {
+                await serverManager.stop()
+                await serverManager.embeddingManager.stop()
+            }
+            sendStatusChange()
+            return serverManager.getStatus()
+        } finally {
+            clearTransition()
         }
-        // 通知渲染进程服务状态变化
-        win.webContents.send('server:status-changed', {
-            chatRunning: serverManager.getStatus().state === 'running',
-            embeddingRunning: serverManager.embeddingManager.getStatus().state === 'running'
-        })
-        return serverManager.getStatus()
     })
     ipcMain.handle('server:get-url', () => {
         return ServerConfig.getUrl(ServiceType.CHAT)
@@ -232,6 +228,7 @@ function registerIpcHandlers(win: BrowserWindow): void {
             await serverManager.stop()
             await serverManager.embeddingManager.stop()
             setModelMode(mode)
+            sendStatusChange()
             return {success: true, mode}
         } catch (error) {
             log('模式切换失败:', error)

@@ -43,7 +43,7 @@ const api = {
         }) => void) =>
             ipcRenderer.on('server:download-progress', (_event, progress) => callback(progress)),
         /** 监听服务状态变化（事件驱动） */
-        onStatusChange: (callback: (status: { chatRunning: boolean; embeddingRunning: boolean }) => void) =>
+        onStatusChange: (callback: (status: { chatRunning: boolean; embeddingRunning: boolean; gpuAvailable: boolean }) => void) =>
             ipcRenderer.on('server:status-changed', (_event, status) => callback(status))
     },
 
