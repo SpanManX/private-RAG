@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import {onMounted} from 'vue'
 import Sidebar from '@/components/Sidebar.vue'
 import GlobalError from '@/components/GlobalError.vue'
-import { useDocumentStore } from '@/stores/documentStore'
+import {useDocumentStore} from '@/stores/documentStore'
 
 const documentStore = useDocumentStore()
 onMounted(() => {
@@ -12,10 +12,14 @@ onMounted(() => {
 
 <template>
   <div class="app-layout">
-    <GlobalError />
-    <Sidebar />
+    <GlobalError/>
+    <Sidebar/>
     <main class="app-main">
-      <RouterView />
+      <router-view v-slot="{Component}">
+        <keep-alive :exclude="['Settings']">
+          <component :is="Component"></component>
+        </keep-alive>
+      </router-view>
     </main>
   </div>
 </template>

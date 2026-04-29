@@ -3,6 +3,10 @@ import {onMounted, ref} from 'vue'
 import {useDocumentStore} from '@/stores/documentStore'
 import {useGlobalErrorStore} from '@/stores/globalErrorStore'
 
+defineOptions({
+  name: 'Settings'
+})
+
 const documentStore = useDocumentStore()
 const globalError = useGlobalErrorStore()
 documentStore.refreshDocuments()
@@ -24,63 +28,20 @@ const onlineModelName = ref('')
 onMounted(async () => {
   await loadModelsDir()
   await loadModelMode()
-  // await checkServerStatus()
-  // startStatusPoll()
+
+  // 监听下载进度（页面切换后仍能收到）
+  window.api.server.onDownloadProgress((progress) => {
+    downloadProgress.value = progress
+    if (progress.phase === 'done') {
+      statusMessage.value = '所有文件已就绪'
+      isDownloading.value = false
+    } else if (progress.phase === 'model') {
+      statusMessage.value = '正在下载模型...'
+      isDownloading.value = true
+    }
+  })
 })
 
-// onUnmounted(() => {
-//   stopStatusPoll()
-// })
-
-// function startStatusPoll() {
-//   statusPollInterval = setInterval(checkServerStatus, 3000)
-// }
-
-// function stopStatusPoll() {
-//   if (statusPollInterval) {
-//     clearInterval(statusPollInterval)
-//     statusPollInterval = null
-//   }
-// }
-
-// async function checkServerStatus() {
-//   const status = await window.api.server.status()
-//   const embeddingStatus = await window.api.embedding.status()
-//
-//   if (modelMode.value === 'online') {
-//     // 在线模式：只看 embedding 服务
-//     serverStatus.value = embeddingStatus.state === 'running' ? 'running' : (embeddingStatus.state === 'error' ? 'error' : 'idle')
-//   } else {
-//     // 本地模式：两个服务都要运行
-//     const bothRunning = status.state === 'running' && embeddingStatus.state === 'running'
-//     serverStatus.value = bothRunning ? 'running' : (status.state === 'error' || embeddingStatus.state === 'error' ? 'error' : 'idle')
-//   }
-//
-//   statusMessage.value = status.message
-//   chatModelName.value = status.modelName || '未加载'
-//   embeddingModelName.value = embeddingStatus.modelName || '未加载'
-// }
-
-// async function startServer() {
-//   serverStatus.value = 'starting'
-//   statusMessage.value = '正在启动模型服务...'
-//   try {
-//     const result = await window.api.server.start()
-//     if (!result.success) {
-//       serverStatus.value = 'error'
-//       statusMessage.value = result.error || '启动服务失败'
-//       return
-//     }
-//     await checkServerStatus()
-//   } catch (e) {
-//     serverStatus.value = 'error'
-//   }
-// }
-
-// async function stopServer() {
-//   await window.api.server.stop()
-//   await checkServerStatus()
-// }
 
 async function downloadModel() {
   isDownloading.value = true
@@ -93,17 +54,6 @@ async function downloadModel() {
     total: 2
   }
   statusMessage.value = '正在下载模型...'
-
-  window.api.server.onDownloadProgress((progress) => {
-    downloadProgress.value = progress
-    if (progress.phase === 'done') {
-      statusMessage.value = '所有文件已就绪'
-      isDownloading.value = false
-    } else {
-      // statusMessage.value = `下载中: ${progress.fileName} - ${progress.percent}%`
-      statusMessage.value = `下载中...`
-    }
-  })
 
   try {
     await window.api.server.downloadModel()
@@ -161,57 +111,11 @@ async function saveOnlineApi() {
     model: onlineModelName.value
   })
 }
-
-// function getStatusLabel(): string {
-//   switch (serverStatus.value) {
-//     case 'running':
-//       return '服务运行中'
-//     case 'starting':
-//       return '启动中...'
-//     case 'error':
-//       return '服务异常'
-//     default:
-//       return '服务未启动'
-//   }
-// }
 </script>
 
 <template>
   <div class="settings">
     <h1>设置</h1>
-
-    <!-- 模型服务状态 -->
-<!--    <section class="settings-section">-->
-<!--      <h2>模型服务</h2>-->
-<!--      <div class="status-card">-->
-<!--        <div class="status-row">-->
-<!--          <span class="label">状态:</span>-->
-<!--          <span class="status-badge" :class="serverStatus">{{ getStatusLabel() }}</span>-->
-<!--        </div>-->
-<!--        <div class="status-row">-->
-<!--          <span class="label">信息:</span>-->
-<!--          <span class="value">{{ statusMessage }}</span>-->
-<!--        </div>-->
-<!--        <div class="actions">-->
-<!--          <button-->
-<!--              v-if="serverStatus === 'running'"-->
-<!--              class="btn btn-danger"-->
-<!--              @click="stopServer"-->
-<!--          >-->
-<!--            停止服务-->
-<!--          </button>-->
-<!--          <button-->
-<!--              v-else-->
-<!--              class="btn btn-primary"-->
-<!--              :disabled="serverStatus === 'starting'"-->
-<!--              @click="startServer"-->
-<!--          >-->
-<!--            启动服务-->
-<!--          </button>-->
-<!--        </div>-->
-<!--      </div>-->
-<!--    </section>-->
-
     <!-- 模型模式选择 -->
     <section class="settings-section">
       <h2>模型模式</h2>

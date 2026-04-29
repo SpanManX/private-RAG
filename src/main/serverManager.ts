@@ -20,6 +20,10 @@ import {ServerConfig, ServiceType} from './utils/serverUtils'
 import {EmbeddingServerManager} from './embeddingServerManager'
 import {ChildProcess, spawn} from "child_process";
 
+/** 用于进程退出时通知渲染进程 */
+let _win: any = null
+export const setWin = (win: any) => { _win = win }
+
 /** 模型下载进度（IPC 事件发送） */
 export interface DownloadProgress {
     percent: number      // 进度 0-100
@@ -42,9 +46,6 @@ export class ServerManager extends LlamaServerBase {
     /** 是否正在下载 */
     private isDownloading = false
 
-    /** embedding 服务管理器（独立进程） */
-    public embeddingManager: EmbeddingServerManager
-
     /** Qwen 模型文件名 */
     private readonly MODEL_FILE = 'Qwen3-4B-Q5_K_M.gguf'
 
@@ -56,7 +57,6 @@ export class ServerManager extends LlamaServerBase {
 
     constructor() {
         super()
-        this.embeddingManager = new EmbeddingServerManager()
         this.refreshPaths()
     }
 
@@ -97,6 +97,13 @@ export class ServerManager extends LlamaServerBase {
             process.on('exit', (code) => {
                 log(`llama-server 已退出，代码: ${code}`)
                 this.process = null
+                if (_win) {
+                    _win.webContents.send('server:status-changed', {
+                        chatRunning: false,
+                        embeddingRunning: this.embeddingManager.getStatus().state === 'running',
+                        gpuAvailable: this.gpuAvailable
+                    })
+                }
             })
 
             return process

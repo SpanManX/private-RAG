@@ -11,12 +11,13 @@ import {app, shell, BrowserWindow, ipcMain, dialog} from 'electron'
 import {join} from 'path'
 import {electronApp, is, optimizer} from '@electron-toolkit/utils'
 import {initLogger, log} from './logger'
-import {ServerManager} from './serverManager'
+import {ServerManager, setWin as setServerWin} from './serverManager'
 import {DocumentProcessor} from './documentProcessor'
 import {IndexManager} from './indexManager'
 import {RagEngine} from './ragEngine'
 import {ServerConfig, ServiceType} from './utils/serverUtils'
 import {getModelMode, setModelMode, getOnlineApiConfig, setOnlineApiConfig} from './store'
+import {EmbeddingServerManager} from "./embeddingServerManager";
 
 // ============================================
 // 全局错误捕获（尽早注册，确保捕获所有阶段错误）
@@ -67,6 +68,7 @@ process.on('unhandledRejection', (reason) => {
 // 全局模块单例
 // ============================================
 let serverManager: ServerManager
+let embeddingServerManager:EmbeddingServerManager
 let documentProcessor: DocumentProcessor
 let indexManager: IndexManager
 let ragEngine: RagEngine
@@ -138,6 +140,8 @@ function createWindow(): BrowserWindow {
 async function initializeModules(): Promise<void> {
     const userDataPath = app.getPath('userData')
     serverManager = new ServerManager()
+    setServerWin(serverManager)
+    embeddingServerManager = new EmbeddingServerManager()
     documentProcessor = new DocumentProcessor()
     indexManager = new IndexManager(userDataPath)
     ragEngine = new RagEngine(indexManager)
@@ -160,7 +164,7 @@ function registerIpcHandlers(win: BrowserWindow): void {
     // -------- 发送服务状态变化 --------
     const sendStatusChange = () => {
         const chatRunning = serverManager.getStatus().state === 'running'
-        const embeddingRunning = serverManager.embeddingManager.getStatus().state === 'running'
+        const embeddingRunning = embeddingServerManager.getStatus().state === 'running'
         win.webContents.send('server:status-changed', {
             chatRunning,
             embeddingRunning,
@@ -170,15 +174,15 @@ function registerIpcHandlers(win: BrowserWindow): void {
 
     // -------- llama-server 服务管理 --------
     ipcMain.handle('server:status', () => serverManager.getStatus())
-    ipcMain.handle('embedding:status', () => serverManager.embeddingManager.getStatus())
+    ipcMain.handle('embedding:status', () => embeddingServerManager.getStatus())
     ipcMain.handle('server:start', async () => {
         try {
             const mode = getModelMode()
             if (mode === 'online') {
-                await serverManager.embeddingManager.start()
+                await embeddingServerManager.start()
             } else {
                 await serverManager.start()
-                await serverManager.embeddingManager.start()
+                await embeddingServerManager.start()
             }
             sendStatusChange()
             return {success: true, status: serverManager.getStatus()}
@@ -193,10 +197,10 @@ function registerIpcHandlers(win: BrowserWindow): void {
         try {
             const mode = getModelMode()
             if (mode === 'online') {
-                await serverManager.embeddingManager.stop()
+                await embeddingServerManager.stop()
             } else {
                 await serverManager.stop()
-                await serverManager.embeddingManager.stop()
+                await embeddingServerManager.stop()
             }
             return serverManager.getStatus()
         } finally {
@@ -219,7 +223,7 @@ function registerIpcHandlers(win: BrowserWindow): void {
     ipcMain.handle('config:set-model-mode', async (_event, mode: 'local' | 'online') => {
         try {
             await serverManager.stop()
-            await serverManager.embeddingManager.stop()
+            await embeddingServerManager.stop()
             setModelMode(mode)
             sendStatusChange()
             return {success: true, mode}
@@ -250,13 +254,13 @@ function registerIpcHandlers(win: BrowserWindow): void {
             const mode = getModelMode()
             if (mode === 'online') {
                 // 在线模式：只检查 embedding 服务
-                if (serverManager.embeddingManager.getStatus().state !== 'running') {
+                if (embeddingServerManager.getStatus().state !== 'running') {
                     return {success: false, error: 'Embedding 服务未启动。请先点击"启动服务"。'}
                 }
             } else {
                 // 本地模式：检查两个服务
                 const chatStatus = serverManager.getStatus().state
-                const embedStatus = serverManager.embeddingManager.getStatus().state
+                const embedStatus = embeddingServerManager.getStatus().state
                 if (chatStatus !== 'running') {
                     return {success: false, error: '对话服务未启动。请先点击"启动服务"。'}
                 }
@@ -278,7 +282,7 @@ function registerIpcHandlers(win: BrowserWindow): void {
     ipcMain.handle('document:import-batch', async (_event, filePaths: string[]) => {
         const win = BrowserWindow.getAllWindows()[0]
         if (!win) return []
-        if (serverManager.embeddingManager.getStatus().state !== 'running') {
+        if (embeddingServerManager.getStatus().state !== 'running') {
             win.webContents.send('document:import-progress', {
                 phase: 'done',
                 fileName: '',
@@ -383,7 +387,7 @@ function registerIpcHandlers(win: BrowserWindow): void {
             if (serverManager.getStatus().state !== 'running') {
                 return {success: false, error: 'Model service is not running. Please click "启动服务" first.'}
             }
-            if (serverManager.embeddingManager.getStatus().state !== 'running') {
+            if (embeddingServerManager.getStatus().state !== 'running') {
                 return {success: false, error: 'Embedding service is not running. Please click "启动服务" first.'}
             }
             const {prompt, citations} = await ragEngine.buildPrompt(question)
@@ -399,7 +403,7 @@ function registerIpcHandlers(win: BrowserWindow): void {
     // -------- 在线模式 RAG 问答 --------
     ipcMain.handle('online:chat-stream', async (_event, question: string) => {
         try {
-            if (serverManager.embeddingManager.getStatus().state !== 'running') {
+            if (embeddingServerManager.getStatus().state !== 'running') {
                 return {success: false, error: 'Embedding 服务未启动。请先点击"启动服务"。'}
             }
             const {prompt, citations} = await ragEngine.buildPrompt(question)
@@ -461,13 +465,13 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', async () => {
     // 先停止 chat 服务，再停止 embedding 服务
     await serverManager?.stop()
-    await serverManager?.embeddingManager?.stop()
+    await embeddingServerManager?.stop()
     if (process.platform !== 'darwin') app.quit()
 })
 
 // 应用退出前：停止 llama-server、关闭 LanceDB 连接
 app.on('before-quit', async () => {
     await serverManager?.stop()
-    await serverManager?.embeddingManager?.stop()
+    await embeddingServerManager?.stop()
     await indexManager?.close()
 })
