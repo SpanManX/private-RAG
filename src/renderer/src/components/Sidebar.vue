@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {ref, onMounted} from 'vue'
+import {ref, onMounted, onUnmounted} from 'vue'
 import {useRoute} from 'vue-router'
 import DocList from './DocList.vue'
 import FileUploader from './FileUploader.vue'
@@ -10,6 +10,8 @@ const serverStatus = ref<'idle' | 'starting' | 'running' | 'error'>('idle')
 const gpuAvailable = ref(false)
 const modelMode = ref<'local' | 'online'>('local')
 
+let unsubsribeStatusChange: (() => void) | null = null
+
 onMounted(async () => {
   // 初始状态
   modelMode.value = await window.api.config.getModelMode()
@@ -18,7 +20,7 @@ onMounted(async () => {
   updateStatus(status.state, embeddingStatus.state, status.gpuAvailable ?? false)
 
   // 监听服务状态变化
-  window.api.server.onStatusChange(({chatRunning, embeddingRunning, gpuAvailable: gpu, modelMode, error}) => {
+  unsubsribeStatusChange = window.api.server.onStatusChange(({chatRunning, embeddingRunning, gpuAvailable: gpu, modelMode, error}) => {
     gpuAvailable.value = gpu
     if (error) {
       serverStatus.value = 'error'
@@ -29,6 +31,10 @@ onMounted(async () => {
       : (chatRunning && embeddingRunning)
     serverStatus.value = isRunning ? 'running' : 'idle'
   })
+})
+
+onUnmounted(() => {
+  unsubsribeStatusChange?.()
 })
 
 function updateStatus(chatState: string, embedState: string, gpu: boolean) {

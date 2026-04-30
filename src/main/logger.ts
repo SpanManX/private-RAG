@@ -18,6 +18,8 @@ export function log(...args: unknown[]): void {
   if (logFile) {
     try {
       fs.appendFileSync(logFile, line + '\n')
-    } catch {}
+    } catch (err) {
+      throw new Error(`Failed to write to log file: ${err}`)
+    }
   }
 }

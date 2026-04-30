@@ -10,7 +10,7 @@ declare module '*.vue' {
 interface Window {
     electron: typeof import('@electron-toolkit/preload').electronAPI
     api: {
-        onGlobalError: (callback: (errorMsg: string) => void) => void;
+        onGlobalError: (callback: (errorMsg: string) => void) => () => void;
         server: {
             status: () => Promise<{
                 state: 'idle' | 'starting' | 'running' | 'error';
@@ -41,14 +41,14 @@ interface Window {
                 fileName: string
                 current: number
                 total: number
-            }) => void) => void
+            }) => void) => () => void
             onStatusChange: (callback: (status: {
                 chatRunning: boolean
                 embeddingRunning: boolean
                 gpuAvailable: boolean
                 modelMode: 'local' | 'online'
                 error?: string
-            }) => void) => void
+            }) => void) => () => void
         }
         document: {
             import: (filePath: string) => Promise<{
@@ -73,7 +73,7 @@ interface Window {
                 chunkIndex: number
                 chunkTotal: number
                 percent: number
-            }) => void) => void
+            }) => void) => () => void
         }
         rag: {
             query: (question: string) => Promise<{

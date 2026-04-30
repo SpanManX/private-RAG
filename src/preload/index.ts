@@ -40,11 +40,15 @@ const api = {
             fileName: string
             current: number
             total: number
-        }) => void) =>
-            ipcRenderer.on('server:download-progress', (_event, progress) => callback(progress)),
+        }) => void) => {
+            ipcRenderer.on('server:download-progress', (_event, progress) => callback(progress))
+            return () => ipcRenderer.removeAllListeners('server:download-progress')
+        },
         /** 监听服务状态变化（事件驱动） */
-        onStatusChange: (callback: (status: { chatRunning: boolean; embeddingRunning: boolean; gpuAvailable: boolean; modelMode: 'local' | 'online'; error?: string }) => void) =>
+        onStatusChange: (callback: (status: { chatRunning: boolean; embeddingRunning: boolean; gpuAvailable: boolean; modelMode: 'local' | 'online'; error?: string }) => void) => {
             ipcRenderer.on('server:status-changed', (_event, status) => callback(status))
+            return () => ipcRenderer.removeAllListeners('server:status-changed')
+        }
     },
 
     // -------- Embedding 服务管理 --------
@@ -72,8 +76,10 @@ const api = {
             chunkIndex: number
             chunkTotal: number
             percent: number
-        }) => void) =>
+        }) => void) => {
             ipcRenderer.on('document:import-progress', (_event, progress) => callback(progress))
+            return () => ipcRenderer.removeAllListeners('document:import-progress')
+        }
     },
 
     // -------- RAG 问答 --------
@@ -126,6 +132,10 @@ const api = {
         // 先移除之前的监听器，防止多次触发重复弹窗
         ipcRenderer.removeAllListeners('global:error');
         ipcRenderer.on('global:error', (_event: IpcRendererEvent, message: string) => callback(message));
+        // 返回取消订阅函数
+        return () => {
+            ipcRenderer.removeAllListeners('global:error');
+        }
     }
 }
 

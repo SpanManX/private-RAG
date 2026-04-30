@@ -134,7 +134,7 @@ export const useDocumentStore = defineStore('document', () => {
         }
 
         // 订阅主进程推送的进度事件
-        window.api.document.onImportProgress((progress) => {
+        const unsubscribeImportProgress = window.api.document.onImportProgress((progress) => {
             importProgress.value = progress
             if (progress.phase === 'done') {
                 isImporting.value = false
@@ -148,12 +148,17 @@ export const useDocumentStore = defineStore('document', () => {
             }
         })
 
-        const results = await window.api.document.importBatch(filePaths)
-        console.log('importBatch 结果:', results)
-        await refreshDocuments()
-        // 如果主进程还未发送 done 事件，手动结束
-        if (isImporting.value) {
-            isImporting.value = false
+        try {
+            const results = await window.api.document.importBatch(filePaths)
+            console.log('importBatch 结果:', results)
+            await refreshDocuments()
+            // 如果主进程还未发送 done 事件，手动结束
+            if (isImporting.value) {
+                isImporting.value = false
+            }
+        } finally {
+            // 取消订阅，确保即使发生错误也能清理
+            unsubscribeImportProgress()
         }
     }
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {onMounted, ref} from 'vue'
+import {onMounted, onUnmounted, ref} from 'vue'
 import {useDocumentStore} from '@/stores/documentStore'
 import {useGlobalErrorStore} from '@/stores/globalErrorStore'
 
@@ -21,12 +21,14 @@ const onlineApiKey = ref('')
 const onlineModelName = ref('')
 // let statusPollInterval: ReturnType<typeof setInterval> | null = null
 
+let unsubsribeDownloadProgress: (() => void) | null = null
+
 onMounted(async () => {
   await loadModelsDir()
   await loadModelMode()
 
   // 监听下载进度（页面切换后仍能收到）
-  window.api.server.onDownloadProgress((progress) => {
+  unsubsribeDownloadProgress = window.api.server.onDownloadProgress((progress) => {
     downloadProgress.value = progress
     if (progress.phase === 'done') {
       statusMessage.value = '所有文件已就绪'
@@ -36,6 +38,10 @@ onMounted(async () => {
       isDownloading.value = true
     }
   })
+})
+
+onUnmounted(() => {
+  unsubsribeDownloadProgress?.()
 })
 
 

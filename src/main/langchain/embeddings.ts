@@ -49,7 +49,8 @@ export class LlamaEmbeddings extends Embeddings {
                     headers: {
                         'Content-Type': 'application/json',
                         'Content-Length': Buffer.byteLength(body)
-                    }
+                    },
+                    timeout: 30000
                 },
                 (res) => {
                     let data = ''
@@ -93,6 +94,10 @@ export class LlamaEmbeddings extends Embeddings {
             )
 
             req.on('error', reject)
+            req.on('timeout', () => {
+                req.destroy()
+                reject(new Error('Embedding request timed out'))
+            })
             req.write(body)
             req.end()
         })
