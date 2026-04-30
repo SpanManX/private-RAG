@@ -399,9 +399,10 @@ export class IndexManager {
             // 1. 将查询文本转换为向量
             let queryVector: number[]
             try {
+                // 验证向量是否有效
                 queryVector = this.validateEmbeddingOrThrow(
-                    await this.embeddings.embedQuery(query),
-                    `query=${query.slice(0, 40)}`
+                    await this.embeddings.embedQuery(query),            // 把查询文本转为向量
+                    `query=${query.slice(0, 40)}`    // 用于错误信息中的上下文标识
                 )
                 await this.ensureTableForDimension(queryVector.length)
                 console.log(`[Search] 查询 "${query}" 向量维度: ${queryVector.length}, 前5维: ${queryVector.slice(0, 5).join(', ')}`)
