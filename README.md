@@ -256,9 +256,6 @@ src/
 |------|---------|
 | Windows | `%APPDATA%\PrivRAG\logs\main.log` |
 
-打开日志目录：
-- Windows: 资源管理器地址栏输入 `%APPDATA%\PrivRAG\logs`
-
 ---
 
 ## License
